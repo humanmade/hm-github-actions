@@ -22,7 +22,7 @@ inputs:
     required: false
   commit_user_email:
     description: Email to use for release branch commit email.
-    default: "<>"
+    default: "hm-gh-actions@users.noreply.github.com"
     required: false
 
 runs:
