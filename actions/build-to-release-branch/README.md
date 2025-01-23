@@ -6,6 +6,8 @@ This action can be used to compile a source branch into a target releasable bran
 
 Reference this action in a workflow within your project by using a repository action reference. As an example, the below action listens for pushes to `main`, then installs build dependencies and uses this action to build generated assets to a `release` branch.
 
+(Note: The target `release` branch must exist before this action is used. Push a copy of your default branch as the base for future release commits, _e.g._ `git push origin main:release`.)
+
 ```yml
 name: Production Release
 
