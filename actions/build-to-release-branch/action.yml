@@ -1,5 +1,6 @@
 name: Build to release branch
 description: Merge and build a source branch into a releasable, fully-built branch. Maintains branch history and force-commits gitignore'd built files.
+author: Human Made
 
 inputs:
   source_branch:
