@@ -33,7 +33,7 @@ concurrency:
 jobs:
   release:
     name: "Update release branch"
-    uses: humanmade/hm-github-actions/.github/workflows/build-and-release-node-basic.yml@e9d83e785d128a9b49b0e85f02643dae73574900
+    uses: humanmade/hm-github-actions/.github/workflows/build-and-release-node.yml@b50a9a6e35ec3fb70b9c78a74226d8979c65af4a
     with:
       node_version: 22
       source_branch: main
@@ -43,4 +43,4 @@ jobs:
         npm ci
         npm run build
 ```
-See [workflows/build-and-release-node-basic.yml](./workflows/build-and-release-node-basic.yml) for full usage instructions.
+See [.github/workflows/build-and-release-node-basic.yml](./.github/workflows/build-and-release-node.yml) for full usage instructions.
