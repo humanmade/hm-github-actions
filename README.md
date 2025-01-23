@@ -24,7 +24,7 @@ name: Production Release
 on:
   push:
     branches:
-      - add-gh-actions
+      - main
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
