@@ -34,6 +34,7 @@ runs:
       run: |
         git config user.name "${{ inputs.commit_user_name }}"
         git config user.email "${{ inputs.commit_user_email }}"
+
     - name: Check out release branch
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
@@ -53,6 +54,7 @@ runs:
         git merge -s ours '${{ inputs.source_branch }}'
         git diff --binary '${{ inputs.source_branch }}' | git apply -R --index
         git commit --amend -m "Merge branch '${{ inputs.source_branch }}' into '${{ inputs.release_branch }}'"
+
     - name: Build code
       shell: bash
       run: ${{ inputs.build_script }}
