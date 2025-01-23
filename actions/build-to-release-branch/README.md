@@ -57,6 +57,6 @@ jobs:
 
 ### Optional Parameters
 
-- `build_script`: Script used to generate built files. Defaults to `npm run build` with no installation step.
+- `build_script`: Script used to generate built files. Defaults to `npm ci; npm run build`.
 - `commit_user_name`: Name used for the release build Git commit within the CI process. Defaults to "Your friendly neighborhood GH Actions Bot".
 - `commit_user_email`: Email used for the release build Git commit within the CI process. Defaults to the empty address "<>".

@@ -20,8 +20,10 @@ on:
         type: string
       # Optional inputs.
       build_script:
-        description: Command to run to build code. "npm run build" by default.
-        default: "npm run build"
+        description: Command to run to build code. "npm ci; npm run build" by default.
+        default: |
+          npm ci
+          npm run build
         required: false
         type: string
       commit_user_name:

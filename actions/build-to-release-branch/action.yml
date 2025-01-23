@@ -13,8 +13,10 @@ inputs:
     description: Generated assets to forcibly include in release branch commit. Overrides .gitignore.
     required: true
   build_script:
-    description: Command to run to build code. "npm run build" by default.
-    default: "npm run build"
+    description: Command to run to build code. "npm ci; npm run build" by default.
+    default: |
+      npm ci
+      npm run build
     required: false
   commit_user_name:
     description: Name to use for release branch commit author.
