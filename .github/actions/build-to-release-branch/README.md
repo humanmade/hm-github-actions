@@ -33,7 +33,7 @@ jobs:
           cache: 'npm'
 
       - name: Merge and build
-        uses: humanmade/hm-github-actions/.github/actions/build-to-release-branch@2da9227322333e5f3ba18fec7aceabd9f5de365b
+        uses: humanmade/hm-github-actions/.github/actions/build-to-release-branch@a9a243d6c42fbff4a967d7ce0a6b307bc77251b7 # v0.1.0
         with:
           source_branch: main
           release_branch: release
