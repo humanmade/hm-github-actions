@@ -1,0 +1,66 @@
+# This workflow simplifies installing and building a Node.js project, then
+# commits the built asset files to a target release branch.
+name: Build Node.js project to target branch
+
+on:
+  workflow_call:
+    inputs:
+      # Required inputs.
+      source_branch:
+        description: Name of source branch.
+        required: true
+        type: string
+      release_branch:
+        description: Name of target release branch. Will be updated with a merge commit that includes files within built_asset_paths.
+        required: true
+        type: string
+      built_asset_paths:
+        description: Generated assets to forcibly include in release branch commit. Overrides .gitignore.
+        required: true
+        type: string
+      # Optional inputs.
+      build_script:
+        description: Command to run to build code. "npm ci; npm run build" by default.
+        default: |
+          npm ci
+          npm run build
+        required: false
+        type: string
+      commit_user_name:
+        description: Name to use for release branch commit author.
+        default: "Your friendly neighborhood GH Actions Bot"
+        required: false
+        type: string
+      commit_user_email:
+        description: Email to use for release branch commit email.
+        default: "<>"
+        required: false
+        type: string
+      node_version:
+        required: false
+        default: 22
+        type: number
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'npm'
+
+      - name: Merge and build
+        uses: humanmade/hm-github-actions/.github/actions/build-to-release-branch@227ebe6ec618d246d3ed6787c3dc2f2e49f2692f
+        with:
+          source_branch: ${{ inputs.source_branch }}
+          release_branch: ${{ inputs.release_branch }}
+          built_asset_paths: ${{ inputs.built_asset_paths }}
+          build_script: ${{ inputs.build_script }}
+          commit_user_name: ${{ inputs.commit_user_name }}
+          commit_user_email: ${{ inputs.commit_user_email }}
