@@ -1,0 +1,61 @@
+name: NPM Package Release
+
+on:
+  workflow_call:
+        inputs:
+            node_version:
+                description: 'Which version of node to use for build'
+                type: string
+                required: false
+                default: '16.x'
+            build_command:
+                description: 'The npm command to build the package'
+                type: string
+                required: false
+                default: 'npm run build --if-present'
+            NPM_TOKEN:
+                required: true
+
+jobs:
+    build:
+        name: Build and Publish Package
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+
+            - name: Setup Node
+              uses: actions/setup-node@v3
+              with:
+                node-version: ${{ inputs.node_version }}
+                registry-url: 'https://registry.npmjs.org'
+
+            - name: Install dependencies
+              shell: bash
+              run: npm ci
+
+            - name: Build package
+              id: buildzip
+              shell: bash
+              run:  ${{ inputs.build_command }}
+
+            - name: Create artifacts
+              shell: bash
+              run: echo "zip=$(npm pack)" > "$GITHUB_OUTPUT"
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v1
+              with:
+                  name: github.ref
+                  files: ${{ steps.buildzip.outputs.zip }}
+                  fail_on_unmatched_files: true
+                  target_commitish: main
+                  generate_release_notes: true
+                  draft: true
+
+            - name: Publish to npm
+              shell: bash
+              run: npm publish
+              env:
+                NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
