@@ -56,7 +56,7 @@ jobs:
           cache: 'npm'
 
       - name: Merge and build
-        uses: humanmade/hm-github-actions/.github/actions/build-to-release-branch@a9a243d6c42fbff4a967d7ce0a6b307bc77251b7 # v0.1.0
+        uses: humanmade/hm-github-actions/.github/actions/build-to-release-branch@bbe801d037b61dd0fa0fcd7d208f6bf54d7ca1fd # v0.1.1
         with:
           source_branch: ${{ inputs.source_branch }}
           release_branch: ${{ inputs.release_branch }}

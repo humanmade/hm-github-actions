@@ -33,7 +33,7 @@ concurrency:
 jobs:
   release:
     name: "Update release branch"
-    uses: humanmade/hm-github-actions/.github/workflows/build-and-release-node.yml@a9a243d6c42fbff4a967d7ce0a6b307bc77251b7 # v0.1.0
+    uses: humanmade/hm-github-actions/.github/workflows/build-and-release-node.yml@bbe801d037b61dd0fa0fcd7d208f6bf54d7ca1fd # v0.1.1
     with:
       node_version: 22
       source_branch: main
