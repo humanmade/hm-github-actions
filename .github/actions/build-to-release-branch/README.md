@@ -24,16 +24,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out project
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout # See note below on pinning SHAs.
 
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node
         with:
-          node-version: 22
+          node-version: 24
           cache: 'npm'
 
       - name: Merge and build
-        uses: humanmade/hm-github-actions/.github/actions/build-to-release-branch@bbe801d037b61dd0fa0fcd7d208f6bf54d7ca1fd # v0.1.1
+        uses: humanmade/hm-github-actions/.github/actions/build-to-release-branch@04c32a93e52ae987095f144105745a501d6207c8 # v0.2.0
         with:
           source_branch: main
           release_branch: release
