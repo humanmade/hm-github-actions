@@ -1,0 +1,114 @@
+name: Resolve composer.lock content-hash conflict
+description: Merges the PR base branch and resolves a composer.lock content-hash conflict by regenerating the hash, then pushes a merge commit to the PR branch.
+author: Human Made
+
+inputs:
+  base_branch:
+    description: Base branch of the pull request (e.g. main).
+    required: true
+  head_branch:
+    description: Head branch of the pull request to update.
+    required: true
+  working_directory:
+    description: Directory containing composer.json and composer.lock. Defaults to repository root.
+    default: .
+    required: false
+  commit_user_name:
+    description: Name to use for the merge commit author.
+    default: "Your friendly neighborhood GH Actions Bot"
+    required: false
+  commit_user_email:
+    description: Email to use for the merge commit author.
+    default: "<>"
+    required: false
+  commit_message:
+    description: Commit message for the merge commit that resolves the conflict.
+    default: "Auto-resolve composer.lock content-hash conflict"
+    required: false
+
+runs:
+  using: composite
+
+  steps:
+    - name: Configure git
+      shell: bash
+      run: |
+        git config user.name "${{ inputs.commit_user_name }}"
+        git config user.email "${{ inputs.commit_user_email }}"
+
+    - name: Check out PR branch
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        ref: ${{ inputs.head_branch }}
+        fetch-depth: 0
+
+    - name: Detect and resolve content-hash conflict
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Skip if this is a fork PR — GITHUB_TOKEN cannot push to a fork branch.
+        if [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; then
+          echo "PR is from a fork; cannot push with a pull_request token. Skipping."
+          exit 0
+        fi
+
+        WD="${{ inputs.working_directory }}"
+        if [ "$WD" = "." ]; then
+          LOCK_PATH="composer.lock"
+          JSON_PATH="composer.json"
+        else
+          LOCK_PATH="${WD}/composer.lock"
+          JSON_PATH="${WD}/composer.json"
+        fi
+
+        git fetch origin '${{ inputs.base_branch }}'
+
+        # Attempt the merge. If it succeeds cleanly, there is nothing to resolve.
+        if git merge --no-commit --no-ff "origin/${{ inputs.base_branch }}"; then
+          echo "Merge succeeded without conflicts; nothing to resolve."
+          git merge --abort 2>/dev/null || true
+          exit 0
+        fi
+
+        conflicts=$(git diff --name-only --diff-filter=U)
+
+        # If composer.json is also conflicted, a human must resolve it first because
+        # the lock hash can only be correctly regenerated from a resolved composer.json.
+        if echo "$conflicts" | grep -qxF "$JSON_PATH"; then
+          echo "composer.json has conflicts — resolve that first, then re-run."
+          git merge --abort 2>/dev/null || true
+          exit 0
+        fi
+
+        # If any file other than composer.lock is conflicted, bail out.
+        other_conflicts=$(echo "$conflicts" | grep -vxF "$LOCK_PATH" || true)
+        if [ -n "$other_conflicts" ]; then
+          echo "Unexpected conflicts in files other than composer.lock — manual resolution required:"
+          echo "$other_conflicts"
+          git merge --abort 2>/dev/null || true
+          exit 0
+        fi
+
+        # Verify the only differing lines between the two sides of composer.lock
+        # are the content-hash. Any package-level differences require human review.
+        git show ":2:${LOCK_PATH}" > /tmp/composer_lock_ours
+        git show ":3:${LOCK_PATH}" > /tmp/composer_lock_theirs
+        non_hash_diff=$(diff /tmp/composer_lock_ours /tmp/composer_lock_theirs \
+          | grep -E '^[<>]' \
+          | grep -vF '"content-hash":' \
+          || true)
+        if [ -n "$non_hash_diff" ]; then
+          echo "composer.lock has conflicts beyond content-hash — manual resolution required."
+          git merge --abort 2>/dev/null || true
+          exit 0
+        fi
+
+        # Keep the PR branch's lock state, then regenerate the content-hash to
+        # match the now-merged composer.json.
+        git checkout --ours "$LOCK_PATH"
+        ( cd "$WD" && composer update --lock --no-scripts --no-install --no-interaction )
+        git add "$LOCK_PATH"
+        git commit -m "${{ inputs.commit_message }}"
+        git push origin "HEAD:${{ inputs.head_branch }}"
+        echo "Successfully resolved composer.lock content-hash conflict and pushed to ${{ inputs.head_branch }}."
