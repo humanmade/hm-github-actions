@@ -47,12 +47,6 @@ runs:
       run: |
         set -euo pipefail
 
-        # Skip if this is a fork PR — GITHUB_TOKEN cannot push to a fork branch.
-        if [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; then
-          echo "PR is from a fork; cannot push with a pull_request token. Skipping."
-          exit 0
-        fi
-
         WD="${{ inputs.working_directory }}"
         if [ "$WD" = "." ]; then
           LOCK_PATH="composer.lock"
