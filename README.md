@@ -10,6 +10,18 @@ The [`build-to-release-branch.yml`](./.github/actions/build-to-release-branch/ac
 
 [View usage instructions here](./.github/actions/build-to-release-branch/)
 
+### Sync Branches
+
+The [`sync-branches`](./.github/actions/sync-branches/action.yml) action creates a companion sync branch from a labeled pull request and opens a second pull request proposing to merge it into a target environment branch (e.g. `dev`, `staging`). Ported from [`humanmade/sync-branches`](https://github.com/humanmade/sync-branches).
+
+[View usage instructions here](./.github/actions/sync-branches/)
+
+### Resolve Composer Lock Content-Hash Conflict
+
+The [`resolve-composer-lock-conflict`](./.github/actions/resolve-composer-lock-conflict/action.yml) action automatically resolves `composer.lock` content-hash merge conflicts in pull requests. When two branches independently update `composer.json`, the `content-hash` in `composer.lock` diverges. This action detects that situation, regenerates the hash from the resolved `composer.json`, and pushes a merge commit to the PR branch. Pairs naturally with `sync-branches` to fix the `composer.lock` conflict that commonly arises when syncing to an environment branch.
+
+[View usage instructions here](./.github/actions/resolve-composer-lock-conflict/)
+
 ## Complete Workflows
 
 ### Node.js Build-and-Release Workflow
