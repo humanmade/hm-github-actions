@@ -95,7 +95,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           DOCS_DIR=$(jq -r '.docsDir // "docs/blocks"' .document-blocks.json 2>/dev/null || echo "docs/blocks")
-          git add "$DOCS_DIR"
+          BLOCKS_PATH=$(jq -r '.blocksDir // "blocks"' .document-blocks.json 2>/dev/null || echo "blocks")
+          git add "$DOCS_DIR" "$BLOCKS_PATH"
           if ! git diff --cached --quiet; then
             # [skip ci] prevents this commit from re-triggering the workflow.
             git commit -m "docs: update block documentation [skip ci]"

@@ -63,6 +63,17 @@ const CANDIDATE_FILES = [
 	'style.scss',
 ];
 
+// JS files eligible for inline annotation (excludes non-JS candidates).
+const JS_FILES = [
+	'edit.js',
+	'save.js',
+	'index.js',
+	'view.js',
+	'variations.js',
+	'transforms.js',
+	'deprecated.js',
+];
+
 /**
  * Returns the block names that changed in the most recent git commit.
  */
@@ -173,6 +184,90 @@ function stripPreamble( text ) {
 }
 
 /**
+ * Strips a wrapping code fence if the model returned one despite instructions.
+ */
+function stripCodeFence( text ) {
+	return text.replace( /^```[^\n]*\n/, '' ).replace( /\n```\s*$/, '' );
+}
+
+/**
+ * Builds the prompt for adding inline JSDoc and explanatory comments to a JS file.
+ */
+function buildAnnotationPrompt( filename, content ) {
+	return `You are adding inline documentation to a WordPress block JavaScript file.
+
+Add a JSDoc comment to every function and method that does not already have one, and add brief inline comments for any non-obvious logic.
+
+Rules:
+- Do NOT change any code, variable names, or logic.
+- Do NOT add comments that merely restate what the code does — only explain the WHY or clarify non-obvious behavior.
+- Preserve all existing comments exactly as they are.
+- If the file already has sufficient documentation and nothing needs to be added, return it unchanged.
+- Your response must begin with the first line of the file. Do not write any introductory text, preamble, or explanation — not even to say the file needs no changes.
+- Output ONLY the file content. No code fences wrapping the whole output.
+
+### ${ filename }
+\`\`\`
+${ content }
+\`\`\``;
+}
+
+/**
+ * Annotates all JS files in a block folder with JSDoc and inline comments.
+ */
+async function annotateBlockFiles( blockName, blockDir ) {
+	const candidates = [];
+
+	for ( const filename of JS_FILES ) {
+		const filePath = join( blockDir, filename );
+		if ( existsSync( filePath ) ) {
+			candidates.push( { filename, filePath } );
+		}
+	}
+
+	const deprecationsDir = join( blockDir, 'deprecations' );
+	if ( existsSync( deprecationsDir ) ) {
+		for ( const f of readdirSync( deprecationsDir ).sort() ) {
+			if ( f.endsWith( '.js' ) ) {
+				candidates.push( {
+					filename: `deprecations/${ f }`,
+					filePath: join( deprecationsDir, f ),
+				} );
+			}
+		}
+	}
+
+	if ( UTILITIES_DIR ) {
+		const utilityPath = join( UTILITIES_DIR, `${ blockName }.js` );
+		if ( existsSync( utilityPath ) ) {
+			const utilityLabel = join(
+				relative( ROOT, UTILITIES_DIR ),
+				`${ blockName }.js`
+			).replace( /\\/g, '/' );
+			candidates.push( { filename: utilityLabel, filePath: utilityPath } );
+		}
+	}
+
+	const results = await Promise.allSettled(
+		candidates.map( async ( { filename, filePath } ) => {
+			const content = readFileSync( filePath, 'utf-8' ).trim();
+			const prompt = buildAnnotationPrompt( filename, content );
+			const annotated = stripCodeFence( await runClaude( prompt ) );
+			writeFileSync( filePath, annotated + '\n' );
+			console.log( `  ✓  Annotated: ${ relative( ROOT, filePath ) }` );
+		} )
+	);
+
+	results
+		.filter( ( r ) => r.status === 'rejected' )
+		.forEach( ( r, i ) =>
+			console.error(
+				`  ✗  Failed to annotate ${ candidates[ i ].filename }: ${ r.reason?.message }`
+			)
+		);
+}
+
+/**
  * Calls claude -p with the prompt piped to stdin. Returns a Promise<string>.
  */
 function runClaude( prompt ) {
@@ -223,8 +318,10 @@ async function documentBlock( name, styleRef ) {
 	}
 
 	console.log( `  ·  Documenting ${ name }...` );
-	const prompt = buildPrompt( name, blockDir, styleRef );
-	const markdown = stripPreamble( await runClaude( prompt ) );
+	const [ markdown ] = await Promise.all( [
+		runClaude( buildPrompt( name, blockDir, styleRef ) ).then( stripPreamble ),
+		annotateBlockFiles( name, blockDir ),
+	] );
 	const outPath = join( DOCS_DIR, `${ name }.md` );
 	writeFileSync( outPath, markdown + '\n' );
 	console.log( `  ✓  Written: ${ relative( ROOT, outPath ) }` );
@@ -269,7 +366,8 @@ async function main() {
 
 	if ( autoCommit && generated > 0 ) {
 		const docsDir = relative( ROOT, DOCS_DIR );
-		execSync( `git add ${ docsDir }`, { cwd: ROOT } );
+		const blocksDir = relative( ROOT, BLOCKS_DIR );
+		execSync( `git add ${ docsDir } ${ blocksDir }`, { cwd: ROOT } );
 		const hasChanges = execSync( 'git diff --cached --name-only', {
 			cwd: ROOT,
 			encoding: 'utf-8',

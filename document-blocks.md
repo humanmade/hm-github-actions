@@ -1,6 +1,6 @@
 # Block Documentation
 
-Automatically generates markdown documentation for WordPress blocks using Claude Code CLI (`claude -p`). By default, documentation is generated when a PR is opened or when a label is applied, and written to `docs/blocks/{block-name}.md`.
+Automatically generates markdown documentation for WordPress blocks using Claude Code CLI (`claude -p`), and adds JSDoc and inline comments directly to block JS files. By default, this runs when a PR is opened or when a label is applied.
 
 ## Setup
 
@@ -87,9 +87,10 @@ npm run document-block carousel
 ## How it works
 
 1. On PR open (or on push, if `triggerMode` is `"push"`), the workflow diffs the changed commits to find which block folders were modified. Applying the configured doc label to an existing PR re-runs generation for all blocks changed in that PR.
-2. For each changed block, the script reads all source files (`block.json`, `edit.js`, `save.js`, `view.js`, `render.php`, deprecations, and optionally a matching utility file) and sends them to `claude -p` with a structured prompt.
-3. The model returns markdown documentation, which is written to `docs/blocks/{block-name}.md`.
-4. The workflow commits and pushes the updated docs with `[skip ci]` to avoid re-triggering itself.
+2. For each changed block, the script reads all source files (`block.json`, `edit.js`, `save.js`, `view.js`, `render.php`, deprecations, and optionally a matching utility file) and runs two tasks in parallel:
+   - Sends the full file set to `claude -p` to generate `docs/blocks/{block-name}.md`.
+   - Sends each JS file individually to `claude -p` to add JSDoc comments and inline explanatory comments, writing the result back in place.
+3. The workflow stages both the docs directory and the blocks directory, commits with `[skip ci]`, and pushes.
 
 ## Requirements
 
