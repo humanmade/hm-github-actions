@@ -1,0 +1,76 @@
+name: Update block documentation
+
+on:
+  push:
+    branches-ignore:
+      - develop
+      - develop-built
+      - staging
+      - staging-built
+      - production
+      - production-built
+
+jobs:
+  document-blocks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history needed to diff against github.event.before on
+          # multi-commit pushes, and to handle first pushes to new branches.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Detect changed blocks
+        id: blocks
+        run: |
+          # Read blocksDir from .document-blocks.json, defaulting to "blocks".
+          BLOCKS_PATH=$(jq -r '.blocksDir // "blocks"' .document-blocks.json 2>/dev/null || echo "blocks")
+
+          BEFORE="${{ github.event.before }}"
+          # On a branch's first push, before is the zero SHA — fall back to
+          # diffing against the immediate parent commit instead.
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            DIFF=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          else
+            DIFF=$(git diff --name-only "$BEFORE" "${{ github.event.after }}")
+          fi
+
+          BLOCKS=$(echo "$DIFF" \
+            | grep "^$BLOCKS_PATH/" \
+            | sed "s|^$BLOCKS_PATH/\([^/]*\)/.*|\1|" \
+            | sort -u \
+            | tr '\n' ' ' \
+            | sed 's/ $//')
+          echo "blocks=$BLOCKS" >> "$GITHUB_OUTPUT"
+          echo "Detected blocks: $BLOCKS"
+
+      - name: Install Claude Code CLI
+        if: steps.blocks.outputs.blocks != ''
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Generate documentation
+        if: steps.blocks.outputs.blocks != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # Word-splitting of blocks output is intentional here.
+        # shellcheck disable=SC2086
+        run: node scripts/document-blocks.mjs ${{ steps.blocks.outputs.blocks }}
+
+      - name: Commit and push documentation
+        if: steps.blocks.outputs.blocks != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          DOCS_DIR=$(jq -r '.docsDir // "docs/blocks"' .document-blocks.json 2>/dev/null || echo "docs/blocks")
+          git add "$DOCS_DIR"
+          if ! git diff --cached --quiet; then
+            # [skip ci] prevents this commit from re-triggering the workflow.
+            git commit -m "docs: update block documentation [skip ci]"
+            git push
+          fi

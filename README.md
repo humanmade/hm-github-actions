@@ -44,3 +44,9 @@ jobs:
         npm run build
 ```
 See [.github/workflows/build-and-release-node-basic.yml](./.github/workflows/build-and-release-node.yml) for full usage instructions.
+
+### Block Documentation Workflow
+
+The [`document-blocks.yml`](./.github/workflows/document-blocks.yml) workflow automatically generates markdown documentation for WordPress blocks using Claude Code CLI. On push to a feature branch, it detects which block folders changed, passes their source files to `claude -p`, and commits the generated docs back to the branch.
+
+[View setup and usage instructions here](./document-blocks.md)
