@@ -1,0 +1,10 @@
+{
+  "blocksDir": "themes/my-theme/blocks",
+  "utilitiesDir": "themes/my-theme/src/utilities",
+  "docsDir": "docs/blocks",
+  "styleRef": "docs/blocks/example-block.md",
+  "coreBlockPrefix": "core-",
+  "model": "claude-haiku-4-5-20251001",
+  "triggerMode": "pr",
+  "docLabel": "generate-docs"
+}
