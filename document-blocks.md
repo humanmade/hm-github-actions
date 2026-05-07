@@ -1,6 +1,6 @@
 # Block Documentation
 
-Automatically generates markdown documentation for WordPress blocks using Claude Code CLI (`claude -p`). Documentation is generated on push to feature branches via GitHub Actions and written to `docs/blocks/{block-name}.md`.
+Automatically generates markdown documentation for WordPress blocks using Claude Code CLI (`claude -p`). By default, documentation is generated when a PR is opened or when a label is applied, and written to `docs/blocks/{block-name}.md`.
 
 ## Setup
 
@@ -22,7 +22,10 @@ Place this file in the project root and set the paths for your theme:
   "utilitiesDir": "themes/my-theme/src/utilities",
   "docsDir": "docs/blocks",
   "styleRef": "docs/blocks/example-block.md",
-  "coreBlockPrefix": "core-"
+  "coreBlockPrefix": "core-",
+  "model": "claude-haiku-4-5-20251001",
+  "triggerMode": "pr",
+  "docLabel": "generate-docs"
 }
 ```
 
@@ -33,6 +36,9 @@ Place this file in the project root and set the paths for your theme:
 | `docsDir` | No | Output directory for generated docs. Defaults to `docs/blocks`. |
 | `styleRef` | No | Path to a markdown file used as a style reference for Claude. Defaults to the first `.md` file found in `docsDir`. |
 | `coreBlockPrefix` | No | Block folder names starting with this prefix that have no `edit.js` or `save.js` are skipped. Defaults to `"core-"`. Set to `""` to disable. |
+| `model` | No | Claude model used for generation. Defaults to `claude-haiku-4-5-20251001`. |
+| `triggerMode` | No | `"pr"` (default) — runs when a PR is opened or the doc label is applied. `"push"` — runs on every push to a non-protected branch. |
+| `docLabel` | No | The PR label that triggers doc generation when `triggerMode` is `"pr"`. Defaults to `"generate-docs"`. |
 
 ### 3. Add repository secret
 
@@ -80,7 +86,7 @@ npm run document-block carousel
 
 ## How it works
 
-1. On push, the workflow diffs the pushed commits against `github.event.before` to find which block folders changed.
+1. On PR open (or on push, if `triggerMode` is `"push"`), the workflow diffs the changed commits to find which block folders were modified. Applying the configured doc label to an existing PR re-runs generation for all blocks changed in that PR.
 2. For each changed block, the script reads all source files (`block.json`, `edit.js`, `save.js`, `view.js`, `render.php`, deprecations, and optionally a matching utility file) and sends them to `claude -p` with a structured prompt.
 3. The model returns markdown documentation, which is written to `docs/blocks/{block-name}.md`.
 4. The workflow commits and pushes the updated docs with `[skip ci]` to avoid re-triggering itself.

@@ -32,6 +32,7 @@ const BLOCKS_DIR = join( ROOT, config.blocksDir ?? 'blocks' );
 const UTILITIES_DIR = config.utilitiesDir ? join( ROOT, config.utilitiesDir ) : null;
 const DOCS_DIR = join( ROOT, config.docsDir ?? 'docs/blocks' );
 const CORE_BLOCK_PREFIX = config.coreBlockPrefix ?? 'core-';
+const MODEL = config.model ?? 'claude-haiku-4-5-20251001';
 
 // Style reference: explicit path in config, or first .md in DOCS_DIR, or none.
 function resolveStyleRef() {
@@ -178,7 +179,7 @@ function runClaude( prompt ) {
 	return new Promise( ( resolve, reject ) => {
 		const proc = spawn(
 			'claude',
-			[ '-p', '--output-format', 'text', '--tools', '' ],
+			[ '-p', '--output-format', 'text', '--tools', '', '--model', MODEL ],
 			{ stdio: [ 'pipe', 'pipe', 'pipe' ] }
 		);
 

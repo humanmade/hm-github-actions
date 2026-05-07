@@ -9,6 +9,8 @@ on:
       - staging-built
       - production
       - production-built
+  pull_request:
+    types: [opened, reopened, ready_for_review, labeled]
 
 jobs:
   document-blocks:
@@ -17,10 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history needed to diff against github.event.before on
-          # multi-commit pushes, and to handle first pushes to new branches.
+          # Full history needed for diffs. head_ref checks out the actual branch
+          # on pull_request events (default checkout is a detached merge commit).
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -29,16 +32,40 @@ jobs:
       - name: Detect changed blocks
         id: blocks
         run: |
-          # Read blocksDir from .document-blocks.json, defaulting to "blocks".
           BLOCKS_PATH=$(jq -r '.blocksDir // "blocks"' .document-blocks.json 2>/dev/null || echo "blocks")
+          TRIGGER_MODE=$(jq -r '.triggerMode // "pr"' .document-blocks.json 2>/dev/null || echo "pr")
+          DOC_LABEL=$(jq -r '.docLabel // "generate-docs"' .document-blocks.json 2>/dev/null || echo "generate-docs")
 
-          BEFORE="${{ github.event.before }}"
-          # On a branch's first push, before is the zero SHA — fall back to
-          # diffing against the immediate parent commit instead.
-          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            DIFF=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          # Skip if the event doesn't match the configured trigger mode.
+          if [ "${{ github.event_name }}" = "push" ] && [ "$TRIGGER_MODE" != "push" ]; then
+            echo "Skipping: configured for PR trigger, not push."
+            echo "blocks=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$TRIGGER_MODE" != "pr" ]; then
+            echo "Skipping: configured for push trigger, not PR."
+            echo "blocks=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # For labeled events, only proceed if the label matches.
+          if [ "${{ github.event.action }}" = "labeled" ] && [ "${{ github.event.label.name }}" != "$DOC_LABEL" ]; then
+            echo "Skipping: label '${{ github.event.label.name }}' does not match doc label '$DOC_LABEL'."
+            echo "blocks=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Determine diff range based on event type.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DIFF=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
           else
-            DIFF=$(git diff --name-only "$BEFORE" "${{ github.event.after }}")
+            BEFORE="${{ github.event.before }}"
+            # On a branch's first push, before is the zero SHA — fall back to
+            # diffing against the immediate parent commit instead.
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              DIFF=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+            else
+              DIFF=$(git diff --name-only "$BEFORE" "${{ github.event.after }}")
+            fi
           fi
 
           BLOCKS=$(echo "$DIFF" \
