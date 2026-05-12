@@ -45,7 +45,7 @@ concurrency:
 jobs:
   release:
     name: "Update release branch"
-    uses: humanmade/hm-github-actions/.github/workflows/build-and-release-node.yml@04c32a93e52ae987095f144105745a501d6207c8 # v0.2.0
+    uses: humanmade/hm-github-actions/.github/workflows/build-and-release-node.yml@fabf2b583b046cca2cccffa99d5a3cd83c487e4f # v0.3.0
     with:
       node_version: 24
       source_branch: main
@@ -77,7 +77,7 @@ concurrency:
 jobs:
   resolve-lock:
     name: "Resolve composer.lock content-hash conflict"
-    uses: humanmade/hm-github-actions/.github/workflows/resolve-composer-lock-conflict.yml@4d2c658bfd7f5c6b21f1d022322bddf26899b033 # v0.2.0
+    uses: humanmade/hm-github-actions/.github/workflows/resolve-composer-lock-conflict.yml@fabf2b583b046cca2cccffa99d5a3cd83c487e4f # v0.3.0
     with:
       base_branch: ${{ github.base_ref }}
       head_branch: ${{ github.head_ref }}
