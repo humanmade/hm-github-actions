@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: Create sync PR
         id: syncdev
-        uses: humanmade/hm-github-actions/.github/actions/sync-branches@4d2c658bfd7f5c6b21f1d022322bddf26899b033 # v0.2.0
+        uses: humanmade/hm-github-actions/.github/actions/sync-branches@fabf2b583b046cca2cccffa99d5a3cd83c487e4f # v0.3.0
         with:
           from_branch: ${{ github.head_ref }}
           to_branch: dev
