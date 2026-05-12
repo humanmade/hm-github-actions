@@ -1,0 +1,128 @@
+name: Sync branches
+description: On a labeled pull request, create a companion sync branch and open a pull request that proposes merging the source branch into a target environment branch.
+author: Human Made
+
+inputs:
+  from_branch:
+    description: Source branch to sync from — the head branch of the labeled pull request.
+    required: true
+  to_branch:
+    description: Target branch the new sync pull request opens against (e.g. dev, staging).
+    required: true
+  required_label:
+    description: Label on the source pull request that triggered the sync. Removed from the source PR before creating the sync PR.
+    required: true
+  new_branch_suffix:
+    description: Suffix appended to from_branch to form the new sync branch name.
+    default: dev
+    required: false
+  pull_request_title:
+    description: Title of the sync pull request. Defaults to "sync&#58; {from_branch} to {to_branch}".
+    default: ""
+    required: false
+  pull_request_body:
+    description: Body of the sync pull request. Defaults to "sync-branches&#58; Merge #{source_pr} to {to_branch}".
+    default: ""
+    required: false
+  pull_request_is_draft:
+    description: Create the sync pull request as a draft.
+    default: "false"
+    required: false
+  github_token:
+    description: Token used for GitHub API calls. Defaults to the job's GITHUB_TOKEN.
+    default: ${{ github.token }}
+    required: false
+
+outputs:
+  pull_request_url:
+    description: HTML URL of the sync pull request (either newly created or pre-existing).
+    value: ${{ steps.sync.outputs.pull_request_url }}
+  pull_request_number:
+    description: Number of the sync pull request (either newly created or pre-existing).
+    value: ${{ steps.sync.outputs.pull_request_number }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Create sync branch and pull request
+      id: sync
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+
+        FROM_BRANCH="${{ inputs.from_branch }}"
+        TO_BRANCH="${{ inputs.to_branch }}"
+        REQUIRED_LABEL="${{ inputs.required_label }}"
+        NEW_BRANCH_SUFFIX="${{ inputs.new_branch_suffix }}"
+        PR_TITLE_INPUT="${{ inputs.pull_request_title }}"
+        PR_BODY_INPUT="${{ inputs.pull_request_body }}"
+        PR_IS_DRAFT=$(echo "${{ inputs.pull_request_is_draft }}" | tr '[:upper:]' '[:lower:]')
+
+        REPO="${{ github.repository }}"
+        ORIG_PR_NUMBER="${{ github.event.pull_request.number }}"
+        ORIG_PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+
+        if [ -z "$ORIG_PR_NUMBER" ]; then
+          echo "::error::This action must be called from a pull_request event; github.event.pull_request.number is empty."
+          exit 1
+        fi
+
+        NEW_BRANCH="${FROM_BRANCH}-${NEW_BRANCH_SUFFIX}"
+
+        # Remove the triggering label so the workflow can't re-fire on the source PR.
+        # If the label is already gone (e.g. manually removed), skip the sync quietly.
+        if ! gh pr edit "$ORIG_PR_NUMBER" --repo "$REPO" --remove-label "$REQUIRED_LABEL"; then
+          echo "Could not remove label '$REQUIRED_LABEL' from PR #$ORIG_PR_NUMBER; skipping sync."
+          exit 0
+        fi
+
+        # Fail fast if the sync branch already exists — otherwise we'd silently
+        # diverge from a stale branch.
+        if gh api "repos/$REPO/branches/$NEW_BRANCH" --silent 2>/dev/null; then
+          gh pr comment "$ORIG_PR_NUMBER" --repo "$REPO" \
+            --body "Sync has failed as branch \`$NEW_BRANCH\` already exists. Please delete the branch and restart the workflow."
+          echo "::error::Sync branch '$NEW_BRANCH' already exists; delete it and re-run."
+          exit 1
+        fi
+
+        # Create the sync branch at the source PR's head commit.
+        HEAD_SHA=$(gh pr view "$ORIG_PR_NUMBER" --repo "$REPO" --json headRefOid -q .headRefOid)
+        gh api -X POST "repos/$REPO/git/refs" \
+          -f "ref=refs/heads/$NEW_BRANCH" \
+          -f "sha=$HEAD_SHA" > /dev/null
+
+        # If a sync PR is already open from this exact branch pair, return it.
+        EXISTING=$(gh pr list --repo "$REPO" \
+          --head "$NEW_BRANCH" --base "$TO_BRANCH" \
+          --state open --json number,url --limit 1)
+        EXISTING_NUMBER=$(echo "$EXISTING" | jq -r '.[0].number // empty')
+        EXISTING_URL=$(echo "$EXISTING" | jq -r '.[0].url // empty')
+        if [ -n "$EXISTING_NUMBER" ]; then
+          echo "Sync PR already exists: #$EXISTING_NUMBER"
+          echo "pull_request_number=$EXISTING_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "pull_request_url=$EXISTING_URL" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        PR_TITLE="${PR_TITLE_INPUT:-sync: ${FROM_BRANCH} to ${TO_BRANCH}}"
+        PR_BODY="${PR_BODY_INPUT:-sync-branches: Merge #${ORIG_PR_NUMBER} to ${TO_BRANCH}}"
+
+        NEW_PR=$(gh api -X POST "repos/$REPO/pulls" \
+          -f "title=$PR_TITLE" \
+          -f "body=$PR_BODY" \
+          -f "head=$NEW_BRANCH" \
+          -f "base=$TO_BRANCH" \
+          -F "draft=$PR_IS_DRAFT")
+        NEW_PR_NUMBER=$(echo "$NEW_PR" | jq -r .number)
+        NEW_PR_URL=$(echo "$NEW_PR" | jq -r .html_url)
+
+        # Assign the sync PR to the original PR author so they can follow up.
+        gh pr edit "$NEW_PR_NUMBER" --repo "$REPO" --add-assignee "$ORIG_PR_AUTHOR" || \
+          echo "Warning: could not assign PR #$NEW_PR_NUMBER to $ORIG_PR_AUTHOR."
+
+        echo "Created sync PR #$NEW_PR_NUMBER: $NEW_PR_URL"
+        echo "pull_request_number=$NEW_PR_NUMBER" >> "$GITHUB_OUTPUT"
+        echo "pull_request_url=$NEW_PR_URL" >> "$GITHUB_OUTPUT"
