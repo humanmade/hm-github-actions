@@ -10,6 +10,12 @@ The [`build-to-release-branch.yml`](./.github/actions/build-to-release-branch/ac
 
 [View usage instructions here](./.github/actions/build-to-release-branch/)
 
+### Sync Branches
+
+The [`sync-branches`](./.github/actions/sync-branches/action.yml) action creates a companion sync branch from a labeled pull request and opens a second pull request proposing to merge it into a target environment branch (e.g. `dev`, `staging`). Ported from [`humanmade/sync-branches`](https://github.com/humanmade/sync-branches).
+
+[View usage instructions here](./.github/actions/sync-branches/)
+
 ## Complete Workflows
 
 ### Node.js Build-and-Release Workflow
