@@ -40,7 +40,7 @@ jobs:
           tools: composer
 
       - name: Resolve conflict
-        uses: humanmade/hm-github-actions/.github/actions/resolve-composer-lock-conflict@fabf2b583b046cca2cccffa99d5a3cd83c487e4f # v0.3.0
+        uses: humanmade/hm-github-actions/.github/actions/resolve-composer-lock-conflict@1926fac5ec904aef6167fa3ba54477b0d9324462 # v0.4.0
         with:
           base_branch: ${{ github.base_ref }}
           head_branch: ${{ github.head_ref }}
@@ -95,7 +95,7 @@ jobs:
 
       - name: Resolve composer.lock content-hash conflict
         if: steps.syncdev.outputs.PULL_REQUEST_NUMBER
-        uses: humanmade/hm-github-actions/.github/actions/resolve-composer-lock-conflict@fabf2b583b046cca2cccffa99d5a3cd83c487e4f # v0.3.0
+        uses: humanmade/hm-github-actions/.github/actions/resolve-composer-lock-conflict@1926fac5ec904aef6167fa3ba54477b0d9324462 # v0.4.0
         with:
           base_branch: dev
           head_branch: ${{ steps.sync-pr.outputs.branch }}
