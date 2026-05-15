@@ -6,6 +6,7 @@ The action exits without modifying the branch when:
 - There are no conflicts (nothing to do).
 - `composer.json` is also conflicted — a human must resolve it first.
 - `composer.lock` has conflicts beyond the `content-hash` line (package-level changes require human review).
+- The regenerated lock fails `composer install --dry-run` against the merged `composer.json` (a final safety gate before pushing).
 
 The caller is responsible for ensuring the job token can push to `head_branch`. For `pull_request` events from forks, the default `GITHUB_TOKEN` is read-only and the push step will fail; use `pull_request_target` with the usual caveats if fork support is required.
 

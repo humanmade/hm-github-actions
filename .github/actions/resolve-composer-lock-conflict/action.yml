@@ -102,6 +102,16 @@ runs:
         # match the now-merged composer.json.
         git checkout --ours "$LOCK_PATH"
         ( cd "$WD" && composer update --lock --no-scripts --no-install --no-interaction )
+
+        # Verify the regenerated lock is actually installable against the merged
+        # composer.json. Guards against the case where the package-level diff
+        # check passed but the resolver still disagrees with the merged constraints.
+        if ! ( cd "$WD" && composer install --dry-run --no-scripts --no-interaction ); then
+          echo "Regenerated composer.lock is not installable against the merged composer.json — manual resolution required."
+          git merge --abort 2>/dev/null || true
+          exit 0
+        fi
+
         git add "$LOCK_PATH"
         git commit -m "${{ inputs.commit_message }}"
         git push origin "HEAD:${{ inputs.head_branch }}"
