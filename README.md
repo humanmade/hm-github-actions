@@ -22,6 +22,12 @@ The [`sync-branches`](./.github/actions/sync-branches/action.yml) action creates
 
 [View usage instructions here](./.github/actions/sync-branches/)
 
+### Explain Composer VCS Reference Bump
+
+The [`explain-composer-vcs-bump`](./.github/actions/explain-composer-vcs-bump/action.yml) action comments on a pull request explaining any change to a tracked composer VCS ("dev-branch") package reference — e.g. a `composer.json` dependency pinned as `dev-release` — linking to the GitHub compare view between the old and new commit.
+
+[View usage instructions here](./.github/actions/explain-composer-vcs-bump/)
+
 ## Complete Workflows
 
 ### Node.js Build-and-Release Workflow

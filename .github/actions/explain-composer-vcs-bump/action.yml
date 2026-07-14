@@ -1,0 +1,104 @@
+name: Explain composer VCS reference bump
+description: Comments on a pull request explaining any change to a tracked composer VCS ("dev-branch") package reference, linking to the GitHub compare view between the old and new commit.
+author: Human Made
+
+inputs:
+  tracked_packages:
+    description: Newline-separated list of composer package names to track (e.g. wikimedia/shiro-wordpress-theme).
+    required: true
+  working_directory:
+    description: Directory containing composer.lock. Defaults to repository root.
+    default: .
+    required: false
+
+runs:
+  using: composite
+
+  steps:
+    - name: Check out source code
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+    - name: Compare composer.lock VCS references
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+      env:
+        TRACKED_VCS_PACKAGES: ${{ inputs.tracked_packages }}
+        WORKING_DIRECTORY: ${{ inputs.working_directory }}
+      with:
+        script: |
+          const { execFileSync } = require('child_process');
+
+          const pr = context.payload.pull_request;
+          if (!pr) {
+            core.notice('Not running in a pull_request context; skipping.');
+            return;
+          }
+
+          const trackedPackages = process.env.TRACKED_VCS_PACKAGES
+            .split('\n')
+            .map((name) => name.trim())
+            .filter(Boolean);
+
+          const { owner, repo } = context.repo;
+          const lockPath = process.env.WORKING_DIRECTORY === '.'
+            ? 'composer.lock'
+            : `${process.env.WORKING_DIRECTORY}/composer.lock`;
+
+          // pr.base.sha is the base branch's current tip, which drifts forward as
+          // unrelated PRs merge into it. Diff against the merge-base instead, so
+          // this only reflects what this PR itself changed.
+          const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+            owner, repo, basehead: `${pr.base.sha}...${pr.head.sha}`,
+          });
+          const mergeBaseSha = comparison.merge_base_commit.sha;
+
+          execFileSync('git', ['fetch', '--depth=1', 'origin', mergeBaseSha]);
+          execFileSync('git', ['fetch', '--depth=1', 'origin', pr.head.sha]);
+
+          function getPackages(ref) {
+            const content = execFileSync('git', ['show', `${ref}:${lockPath}`]).toString();
+            const lock = JSON.parse(content);
+            const packages = {};
+            for (const pkg of [...(lock.packages || []), ...(lock['packages-dev'] || [])]) {
+              if (pkg.source) packages[pkg.name] = pkg;
+            }
+            return packages;
+          }
+
+          const basePackages = getPackages(mergeBaseSha);
+          const headPackages = getPackages(pr.head.sha);
+
+          // A composer VCS constraint like "dev-release" tracks the tip of the
+          // "release" branch; strip the "dev-" prefix to show that branch name.
+          const branchName = (version) => version.replace(/^dev-/, '');
+
+          const changes = [];
+          for (const name of trackedPackages) {
+            const before = basePackages[name];
+            const after = headPackages[name];
+            if (!before || !after || before.source.reference === after.source.reference) continue;
+
+            const repoUrl = after.source.url.replace(/\.git$/, '');
+            const compareUrl = `${repoUrl}/compare/${before.source.reference}...${after.source.reference}`;
+            const beforeLabel = `${branchName(before.version)}#${before.source.reference.slice(0, 8)}`;
+            const afterLabel = `${branchName(after.version)}#${after.source.reference.slice(0, 8)}`;
+            changes.push(`- \`${name}\` updated from [${beforeLabel} to ${afterLabel}](${compareUrl})`);
+          }
+
+          const marker = '<!-- explain-composer-vcs-bump -->';
+          const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number: pr.number });
+          const existing = comments.find((c) => c.body && c.body.includes(marker));
+
+          if (changes.length === 0) {
+            if (existing) {
+              await github.rest.issues.deleteComment({ owner, repo, comment_id: existing.id });
+            }
+            return;
+          }
+
+          const body = `${marker}\n### Composer VCS reference changes\n\n${changes.join('\n')}`;
+
+          if (existing) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+          }
