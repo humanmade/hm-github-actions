@@ -24,7 +24,7 @@ The [`sync-branches`](./.github/actions/sync-branches/action.yml) action creates
 
 ### Plugin Security Review
 
-The [`plugin-security-review`](./.github/actions/plugin-security-review/action.yml) action detects third-party plugins added or updated in a pull request (via `composer.lock`) and scans only those directories with a caller-supplied security PHPCS ruleset. If findings are present, it requests changes on the PR rather than failing the check, so a human independently reviews and owns the merge decision by dismissing the review.
+The [`plugin-security-review`](./.github/actions/plugin-security-review/action.yml) action detects third-party plugins added or updated in a pull request (via `composer.lock`) and scans only those directories with a security PHPCS standard (defaulting to `HM-Minimum`, or a caller-supplied ruleset for a broader scan). If findings are present, it requests changes on the PR rather than failing the check, so a human independently reviews and owns the merge decision by dismissing the review.
 
 [View usage instructions here](./.github/actions/plugin-security-review/)
 
@@ -116,7 +116,7 @@ jobs:
     name: Plugin Security Review
     uses: humanmade/hm-github-actions/.github/workflows/plugin-security-review.yml@9a18f3f8c307084c3813f37ac7c475ee1f215a9d # v0.5.0
     with:
-      security_ruleset_path: .phpcs-security.xml.dist
+      security_standard: .phpcs-security.xml.dist
 ```
 
 See [.github/workflows/plugin-security-review.yml](./.github/workflows/plugin-security-review.yml) for full usage instructions.

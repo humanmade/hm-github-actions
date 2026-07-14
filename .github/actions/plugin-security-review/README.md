@@ -2,9 +2,9 @@
 
 This action turns a third-party-plugin security scan into a "**human-dismissable gate**" rather than a pass/fail check.
 
-Third-party plugins are typically gitignored and installed by Composer at build time, so they never appear in a pull request's file diff. This action detects which plugins were added or updated by diffing the WordPress plugin/mu-plugin packages in `composer.lock` between the PR base and head (a package counts as changed if its name is new, its version differs, or its resolved commit reference differs), then scans only those directories with a security-only PHPCS ruleset supplied by the caller.
+Third-party plugins are typically gitignored and installed by Composer at build time, so they never appear in a pull request's file diff. This action detects which plugins were added or updated by diffing the WordPress plugin/mu-plugin packages in `composer.lock` between the PR base and head (a package counts as changed if its name is new, its version differs, or its resolved commit reference differs), then scans only those directories with a security-only PHPCS standard.
 
-If the ruleset reports findings, the action posts a **Request changes** review (via `GITHUB_TOKEN`) naming each plugin and the exact command to re-run the scan locally. The job itself always exits successfully, but this review creates intentional friction by requiring a human to dismiss the review in order to unblock merge. This avoids hard-blocking CI on the false positives that third-party plugins routinely trigger, while still surfacing findings that may be real.
+If the standard reports findings, the action posts a **Request changes** review (via `GITHUB_TOKEN`) naming each plugin and the exact command to re-run the scan locally. The job itself always exits successfully, but this review creates intentional friction by requiring a human to dismiss the review in order to unblock merge. This avoids hard-blocking CI on the false positives that third-party plugins routinely trigger, while still surfacing findings that may be real.
 
 The review is keyed to the head commit SHA: re-running the workflow will not stack duplicate reviews for the same commit, but a subsequent commit that changes `composer.lock` again earns a fresh review.
 
@@ -50,7 +50,7 @@ jobs:
       - name: Plugin Security Review
         uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@9a18f3f8c307084c3813f37ac7c475ee1f215a9d
         with:
-          security_ruleset_path: .phpcs-security.xml.dist
+          security_standard: .phpcs-security.xml.dist
           docs_url: https://github.com/my-org/my-repo/blob/main/docs/code-quality.md#plugin-security-review
 ```
 
@@ -62,10 +62,7 @@ jobs:
 
 Checkout, PHP setup, and Composer caching are deliberately left to the caller rather than bundled into this action, so a job that already sets these up for other steps (phpcs, phpstan, tests) doesn't pay for a redundant PHP install here. If you'd rather not declare them yourself, use the [reusable workflow](../../workflows/plugin-security-review.yml) instead, which wraps this action, adds Composer caching, and also accepts a `skip_ci_label` input.
 
-### Required Parameters
-
-- `security_ruleset_path`: Path to a PHPCS ruleset that scans for security issues (injection, escaping, etc.) across first- **and** third-party code. This is project-specific and must already exist in the caller's repository.
-
 ### Optional Parameters
 
+- `security_standard`: Name of an installed PHPCS standard, or a path to a ruleset XML file, scanning for security issues (injection, escaping, etc.) across first- **and** third-party code. Defaults to `HM-Minimum` (provided by [`humanmade/coding-standards`](https://github.com/humanmade/coding-standards)), which most HM WordPress projects already have installed as part of their base linting setup. Supply a project-specific ruleset path (e.g. `.phpcs-security.xml.dist`) for a broader or stricter scan.
 - `docs_url`: Link to project docs explaining the review process, appended to the review body. Omitted if not set.

@@ -7,9 +7,10 @@ description: >-
 author: Human Made
 
 inputs:
-  security_ruleset_path:
-    description: Path to a PHPCS ruleset scanning for security issues (e.g. injection, escaping) across first- and third-party code.
-    required: true
+  security_standard:
+    description: Name of an installed PHPCS standard, or a path to a ruleset XML file, scanning for security issues (e.g. injection, escaping) across first- and third-party code. Defaults to HM-Minimum, which requires humanmade/coding-standards.
+    default: "HM-Minimum"
+    required: false
   docs_url:
     description: Optional link to project docs explaining the review process, appended to the review body.
     default: ""
@@ -49,12 +50,12 @@ runs:
         : > review-body.md
         while IFS= read -r dir; do
           [ -z "$dir" ] && continue
-          if summary=$(vendor/bin/phpcs --standard="${{ inputs.security_ruleset_path }}" --no-colors --report=summary -q "$dir" 2>&1); then
+          if summary=$(vendor/bin/phpcs --standard="${{ inputs.security_standard }}" --no-colors --report=summary -q "$dir" 2>&1); then
             printf -- '- `%s` — passed cleanly\n' "$dir" >> review-body.md
           else
             clean=false
             total=$(printf '%s\n' "$summary" | grep -iE 'A TOTAL OF' | head -1 | sed -E 's/^[[:space:]]*//')
-            printf -- '- `%s` — %s\n  Run: `vendor/bin/phpcs --standard=%s %s`\n' "$dir" "${total:-findings present}" "${{ inputs.security_ruleset_path }}" "$dir" >> review-body.md
+            printf -- '- `%s` — %s\n  Run: `vendor/bin/phpcs --standard=%s %s`\n' "$dir" "${total:-findings present}" "${{ inputs.security_standard }}" "$dir" >> review-body.md
           fi
         done < changed-plugins.txt
         echo "clean=$clean" >> "$GITHUB_OUTPUT"
