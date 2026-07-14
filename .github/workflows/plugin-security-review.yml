@@ -44,9 +44,33 @@ jobs:
     if: "!contains(github.event.pull_request.labels.*.name, inputs.skip_ci_label)"
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so the action can read composer.lock at the PR base commit.
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: ${{ inputs.php_version }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
       - name: Review changed plugins
         uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@9a18f3f8c307084c3813f37ac7c475ee1f215a9d
         with:
-          php_version: ${{ inputs.php_version }}
           security_ruleset_path: ${{ inputs.security_ruleset_path }}
           docs_url: ${{ inputs.docs_url }}

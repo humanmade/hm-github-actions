@@ -12,7 +12,7 @@ Plugins are located by checking `client-mu-plugins/<name>` and `plugins/<name>`,
 
 ## Usage
 
-This action includes its own checkout, PHP setup, and Composer caching, so a single step is enough to run it within a job:
+This action expects the caller to have already checked out the repository (with full history, so it can read `composer.lock` at the PR base commit) and set up PHP/Composer. It only handles installing dependencies, detecting changed plugins, scanning, and posting the review:
 
 ```yml
 name: Plugin Security Review
@@ -35,6 +35,18 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: "8.3"
+          coverage: none
+          tools: composer:v2
+
       - name: Plugin Security Review
         uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@9a18f3f8c307084c3813f37ac7c475ee1f215a9d
         with:
@@ -48,7 +60,7 @@ jobs:
 > [!NOTE]
 > The caller's own `pull_request` trigger controls when this runs (branches, `paths` filtering on `composer.json`/`composer.lock`, etc.) and its own job `if:` controls any skip-label behavior — this action does not hardcode either.
 
-If you'd rather not declare checkout/PHP/permissions yourself, use the [reusable workflow](../../workflows/plugin-security-review.yml) instead, which wraps this action and also accepts a `skip_ci_label` input.
+Checkout, PHP setup, and Composer caching are deliberately left to the caller rather than bundled into this action, so a job that already sets these up for other steps (phpcs, phpstan, tests) doesn't pay for a redundant PHP install here. If you'd rather not declare them yourself, use the [reusable workflow](../../workflows/plugin-security-review.yml) instead, which wraps this action, adds Composer caching, and also accepts a `skip_ci_label` input.
 
 ### Required Parameters
 
@@ -56,5 +68,4 @@ If you'd rather not declare checkout/PHP/permissions yourself, use the [reusable
 
 ### Optional Parameters
 
-- `php_version`: PHP version to use for Composer and PHPCS. Defaults to `"8.3"`.
 - `docs_url`: Link to project docs explaining the review process, appended to the review body. Omitted if not set.
