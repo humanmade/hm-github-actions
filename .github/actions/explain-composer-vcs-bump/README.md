@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Explain composer VCS reference bump
-        uses: humanmade/hm-github-actions/.github/actions/explain-composer-vcs-bump@e23902b9854b30b584643fa96a108d9a4e4c1ed6 # v0.5.0
+        uses: humanmade/hm-github-actions/.github/actions/explain-composer-vcs-bump@70ae190dcc9efa323a3411ca4b25d52015bc1467
         with:
           tracked_packages: |
             wikimedia/shiro-wordpress-theme
