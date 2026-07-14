@@ -36,7 +36,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Plugin Security Review
-        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@REPLACE_WITH_COMMIT_SHA # vX.Y.Z
+        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@9a18f3f8c307084c3813f37ac7c475ee1f215a9d
         with:
           security_ruleset_path: .phpcs-security.xml.dist
           docs_url: https://github.com/my-org/my-repo/blob/main/docs/code-quality.md#plugin-security-review

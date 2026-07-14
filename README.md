@@ -114,7 +114,7 @@ on:
 jobs:
   plugin-security-review:
     name: Plugin Security Review
-    uses: humanmade/hm-github-actions/.github/workflows/plugin-security-review.yml@REPLACE_WITH_COMMIT_SHA # vX.Y.Z
+    uses: humanmade/hm-github-actions/.github/workflows/plugin-security-review.yml@9a18f3f8c307084c3813f37ac7c475ee1f215a9d # v0.5.0
     with:
       security_ruleset_path: .phpcs-security.xml.dist
 ```
