@@ -22,6 +22,12 @@ The [`sync-branches`](./.github/actions/sync-branches/action.yml) action creates
 
 [View usage instructions here](./.github/actions/sync-branches/)
 
+### Plugin Security Review
+
+The [`plugin-security-review`](./.github/actions/plugin-security-review/action.yml) action detects third-party plugins added or updated in a pull request (via `composer.lock`) and scans only those directories with a caller-supplied security PHPCS ruleset. If findings are present, it requests changes on the PR rather than failing the check, so a human independently reviews and owns the merge decision by dismissing the review.
+
+[View usage instructions here](./.github/actions/plugin-security-review/)
+
 ## Complete Workflows
 
 ### Node.js Build-and-Release Workflow
@@ -86,3 +92,31 @@ jobs:
 ```
 
 See [.github/workflows/resolve-composer-lock-conflict.yml](./.github/workflows/resolve-composer-lock-conflict.yml) for full usage instructions.
+
+### Plugin Security Review Workflow
+
+This workflow simplifies running the `plugin-security-review` action by handling checkout, PHP setup, and Composer caching.
+
+Example usage:
+
+```yml
+name: Plugin Security Review
+
+on:
+  pull_request:
+    branches:
+      - production
+      - staging
+    paths:
+      - composer.json
+      - composer.lock
+
+jobs:
+  plugin-security-review:
+    name: Plugin Security Review
+    uses: humanmade/hm-github-actions/.github/workflows/plugin-security-review.yml@REPLACE_WITH_COMMIT_SHA # vX.Y.Z
+    with:
+      security_ruleset_path: .phpcs-security.xml.dist
+```
+
+See [.github/workflows/plugin-security-review.yml](./.github/workflows/plugin-security-review.yml) for full usage instructions.

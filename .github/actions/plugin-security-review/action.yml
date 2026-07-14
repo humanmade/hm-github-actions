@@ -1,0 +1,139 @@
+name: Plugin Security Review
+description: >-
+  Detects third-party plugins added or updated in a pull request (via
+  composer.lock) and scans only those directories with a security-only PHPCS
+  ruleset. If findings are present, requests changes on the PR so a human
+  independently reviews and owns the merge decision by dismissing the review.
+author: Human Made
+
+inputs:
+  php_version:
+    description: PHP version to use for Composer and PHPCS.
+    default: "8.3"
+    required: false
+  security_ruleset_path:
+    description: Path to a PHPCS ruleset scanning for security issues (e.g. injection, escaping) across first- and third-party code.
+    required: true
+  docs_url:
+    description: Optional link to project docs explaining the review process, appended to the review body.
+    default: ""
+    required: false
+
+runs:
+  using: composite
+
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      with:
+        # Full history so we can read composer.lock at the PR base commit.
+        fetch-depth: 0
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+      with:
+        php-version: ${{ inputs.php_version }}
+        coverage: none
+        tools: composer:v2
+
+    - name: Get Composer Cache Directory
+      id: composer-cache
+      shell: bash
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer dependencies
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.composer-cache.outputs.dir }}
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-composer-
+
+    # Installs the (gitignored) plugin code into its Composer installer-paths (typically
+    # client-mu-plugins/ and plugins/).
+    - name: Install dependencies
+      shell: bash
+      run: composer install --prefer-dist --no-progress
+
+    - name: Detect added or updated plugins
+      id: detect
+      shell: bash
+      run: |
+        bash "${{ github.action_path }}/changed-plugins.sh" "${{ github.event.pull_request.base.sha }}" > changed-plugins.txt
+        if [ -s changed-plugins.txt ]; then
+          echo "Detected plugin changes:"
+          cat changed-plugins.txt
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "No third-party plugin additions or updates detected."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Scan changed plugins with the security ruleset
+      id: scan
+      if: steps.detect.outputs.found == 'true'
+      shell: bash
+      run: |
+        clean=true
+        : > review-body.md
+        while IFS= read -r dir; do
+          [ -z "$dir" ] && continue
+          if summary=$(vendor/bin/phpcs --standard="${{ inputs.security_ruleset_path }}" --no-colors --report=summary -q "$dir" 2>&1); then
+            printf -- '- `%s` — passed cleanly\n' "$dir" >> review-body.md
+          else
+            clean=false
+            total=$(printf '%s\n' "$summary" | grep -iE 'A TOTAL OF' | head -1 | sed -E 's/^[[:space:]]*//')
+            printf -- '- `%s` — %s\n  Run: `vendor/bin/phpcs --standard=%s %s`\n' "$dir" "${total:-findings present}" "${{ inputs.security_ruleset_path }}" "$dir" >> review-body.md
+          fi
+        done < changed-plugins.txt
+        echo "clean=$clean" >> "$GITHUB_OUTPUT"
+
+    - name: Request manual security review
+      if: steps.scan.outputs.clean == 'false'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      with:
+        script: |
+          const fs = require('fs');
+          const findings = fs.readFileSync('review-body.md', 'utf8').trim();
+          const { owner, repo } = context.repo;
+          const pull_number = context.payload.pull_request.number;
+          const headSha = context.payload.pull_request.head.sha;
+
+          // Idempotency: one review per head commit. New commits re-trigger a
+          // review (new code must be re-verified); a human's dismissal of the
+          // review for the current commit is preserved across workflow re-runs.
+          const reviews = await github.paginate(github.rest.pulls.listReviews, {
+            owner, repo, pull_number,
+          });
+          const alreadyReviewed = reviews.some(
+            (r) => r.user?.login === 'github-actions[bot]' && r.commit_id === headSha
+          );
+          if (alreadyReviewed) {
+            core.info('This commit already has a bot review; not posting another.');
+            return;
+          }
+
+          const docsUrl = `${{ inputs.docs_url }}`;
+          const body = [
+            '## 🔐 Plugin manual security review required',
+            '',
+            'This PR adds or updates one or more third-party plugins, and the security ruleset reported findings in the changed plugin code.',
+            '',
+            'These findings are **not automatically blocking**: third-party plugins routinely trigger false positives. However, some findings may be real and a human must independently review this plugin and own the decision to merge.',
+            '',
+            '### Changed plugins',
+            findings,
+            '',
+            '### What to do',
+            '1. Run the security scan locally for each plugin listed above (commands included).',
+            '2. Inspect flagged areas and confirm the plugin is fit for purpose — distinguishing real vulnerabilities from false positives.',
+            '3. **Dismiss this review** to record that you have verified it and to unblock merge.',
+            docsUrl ? `\nFull process: ${docsUrl}` : '',
+          ].join('\n');
+
+          await github.rest.pulls.createReview({
+            owner, repo, pull_number,
+            event: 'REQUEST_CHANGES',
+            body,
+          });
+          core.info('Requested changes pending manual plugin security review.');

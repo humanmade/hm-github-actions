@@ -1,0 +1,52 @@
+# This workflow turns a third-party-plugin security scan into a human-dismissable
+# gate: it detects plugins added or updated via composer.lock, scans only those
+# directories with the caller's security PHPCS ruleset, and — if findings are
+# present — requests changes on the PR rather than failing the check. A human
+# reviews the findings and dismisses the review to unblock merge.
+#
+# The caller's own `on:` trigger controls which PRs this runs for (e.g. paths:
+# composer.json/composer.lock); this reusable workflow only defines the job.
+name: Plugin Security Review
+
+on:
+  workflow_call:
+    inputs:
+      # Required inputs.
+      security_ruleset_path:
+        description: Path to a PHPCS ruleset scanning for security issues (e.g. injection, escaping) across first- and third-party code.
+        required: true
+        type: string
+      # Optional inputs.
+      php_version:
+        description: PHP version to use for Composer and PHPCS.
+        default: "8.3"
+        required: false
+        type: string
+      docs_url:
+        description: Optional link to project docs explaining the review process, appended to the review body.
+        default: ""
+        required: false
+        type: string
+      skip_ci_label:
+        description: PR label that skips this review entirely.
+        default: "skip-ci"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  plugin-security-review:
+    name: Plugin Security Review
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.pull_request.labels.*.name, inputs.skip_ci_label)"
+
+    steps:
+      - name: Review changed plugins
+        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@REPLACE_WITH_COMMIT_SHA # vX.Y.Z
+        with:
+          php_version: ${{ inputs.php_version }}
+          security_ruleset_path: ${{ inputs.security_ruleset_path }}
+          docs_url: ${{ inputs.docs_url }}
