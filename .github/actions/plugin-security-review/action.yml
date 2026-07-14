@@ -46,6 +46,14 @@ runs:
       if: steps.detect.outputs.found == 'true'
       shell: bash
       run: |
+        # No standard was supplied, so we're relying on the HM-Minimum default. Fail loudly
+        # if it isn't actually installed, rather than letting phpcs's own "standard not found"
+        # error get misread as a plugin finding below.
+        if [ "${{ inputs.security_standard }}" = "HM-Minimum" ] && ! vendor/bin/phpcs -i | grep -qw 'HM-Minimum'; then
+          echo "::error::No security_standard was supplied, and the default standard (HM-Minimum) is not installed. Add humanmade/coding-standards as a dependency, or pass a security_standard input naming an installed PHPCS standard or a ruleset path."
+          exit 1
+        fi
+
         clean=true
         : > review-body.md
         while IFS= read -r dir; do
