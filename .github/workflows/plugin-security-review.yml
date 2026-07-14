@@ -63,7 +63,7 @@ jobs:
             ${{ runner.os }}-composer-
 
       - name: Review changed plugins
-        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@0e9172f8c3c680f865d3c822754446a8f2f3dc66
+        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@def1220642eee2eac80d25a0736ab66fb274fbf7
         with:
           security_standard: ${{ inputs.security_standard }}
           docs_url: ${{ inputs.docs_url }}
