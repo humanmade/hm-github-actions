@@ -26,11 +26,6 @@ on:
         default: ""
         required: false
         type: string
-      skip_ci_label:
-        description: PR label that skips this review entirely.
-        default: "skip-ci"
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -40,7 +35,6 @@ jobs:
   plugin-security-review:
     name: Plugin Security Review
     runs-on: ubuntu-latest
-    if: "!contains(github.event.pull_request.labels.*.name, inputs.skip_ci_label)"
 
     steps:
       - name: Checkout code

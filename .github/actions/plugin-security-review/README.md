@@ -60,9 +60,9 @@ jobs:
 > [!NOTE]
 > The caller's own `pull_request` trigger controls when this runs (branches, `paths` filtering on `composer.json`/`composer.lock`, etc.) and its own job `if:` controls any skip-label behavior — this action does not hardcode either.
 
-Checkout, PHP setup, and Composer caching are deliberately left to the caller rather than bundled into this action, so a job that already sets these up for other steps (phpcs, phpstan, tests) doesn't pay for a redundant PHP install here. If you'd rather not declare them yourself, use the [reusable workflow](../../workflows/plugin-security-review.yml) instead, which wraps this action, adds Composer caching, and also accepts a `skip_ci_label` input.
+Checkout, PHP setup, and Composer caching are deliberately left to the caller rather than bundled into this action, so a job that already sets these up for other steps (phpcs, phpstan, tests) doesn't pay for a redundant PHP install here. If you'd rather not declare them yourself, use the [reusable workflow](../../workflows/plugin-security-review.yml) instead, which wraps this action and adds Composer caching.
 
-### Optional Parameters
+### Parameters
 
 - `security_standard`: Name of an installed PHPCS standard, or a path to a ruleset XML file, scanning for security issues (injection, escaping, etc.) across first- **and** third-party code. Defaults to `HM-Minimum` (provided by [`humanmade/coding-standards`](https://github.com/humanmade/coding-standards)), which most HM WordPress projects already have installed as part of their base linting setup. Supply a project-specific ruleset path (e.g. `.phpcs-security.xml.dist`) for a broader or stricter scan.
 - `docs_url`: Link to project docs explaining the review process, appended to the review body. Omitted if not set.
