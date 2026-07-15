@@ -48,7 +48,7 @@ jobs:
           tools: composer:v2
 
       - name: Plugin Security Review
-        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@a6e9df8092386f601122bf8f0415659b2836105a
+        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@7a43ab08912a043659fa4492711d2921d79e57ea
         with:
           security_standard: .phpcs-security.xml.dist
           docs_url: https://github.com/my-org/my-repo/blob/main/docs/code-quality.md#plugin-security-review

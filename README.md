@@ -114,7 +114,7 @@ on:
 jobs:
   plugin-security-review:
     name: Plugin Security Review
-    uses: humanmade/hm-github-actions/.github/workflows/plugin-security-review.yml@a6e9df8092386f601122bf8f0415659b2836105a # v0.5.0
+    uses: humanmade/hm-github-actions/.github/workflows/plugin-security-review.yml@7a43ab08912a043659fa4492711d2921d79e57ea # v0.5.0
     with:
       security_standard: .phpcs-security.xml.dist
 ```
