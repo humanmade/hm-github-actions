@@ -2,13 +2,13 @@
 
 This action turns a third-party-plugin security scan into a "**human-dismissable gate**" rather than a pass/fail check.
 
-Third-party plugins are typically gitignored and installed by Composer at build time, so they never appear in a pull request's file diff. This action detects which plugins were added or updated by diffing the WordPress plugin/mu-plugin packages in `composer.lock` between the PR base and head (a package counts as changed if its name is new, its version differs, or its resolved commit reference differs), then scans only those directories with a security-only PHPCS standard.
+Third-party plugins and themes are typically gitignored and installed by Composer at build time, so they never appear in a pull request's file diff. This action detects which packages were added or updated by diffing the WordPress plugin/mu-plugin/theme packages in `composer.lock` between the PR base and head (a package counts as changed if its name is new, its version differs, or its resolved commit reference differs), then scans only those directories with a security-only PHPCS standard.
 
 If the standard reports findings, the action posts a **Request changes** review (via `GITHUB_TOKEN`) naming each plugin and the exact command to re-run the scan locally. The job itself always exits successfully, but this review creates intentional friction by requiring a human to dismiss the review in order to unblock merge. This avoids hard-blocking CI on the false positives that third-party plugins routinely trigger, while still surfacing findings that may be real.
 
 The review is keyed to the head commit SHA: re-running the workflow will not stack duplicate reviews for the same commit, but a subsequent commit that changes `composer.lock` again earns a fresh review.
 
-Plugins are located by checking `client-mu-plugins/<name>` and `plugins/<name>`, the two installer-paths roots used across HM's WordPress projects.
+Packages are located by checking the installer-paths roots commonly used across WordPress projects, `client-mu-plugins/<name>`, `mu-plugins/<name>`, `plugins/<name>`, and `themes/<name>`.
 
 ## Usage
 

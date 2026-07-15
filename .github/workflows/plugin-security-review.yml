@@ -1,5 +1,5 @@
-# This workflow turns a third-party-plugin security scan into a human-dismissable
-# gate: it detects plugins added or updated via composer.lock, scans only those
+# This workflow turns a third-party plugin/theme security scan into a human-dismissable
+# gate: it detects plugins and themes added or updated via composer.lock, scans only those
 # directories with a security PHPCS standard (HM-Minimum by default), and — if findings are
 # present — requests changes on the PR rather than failing the check. A human
 # reviews the findings and dismisses the review to unblock merge.

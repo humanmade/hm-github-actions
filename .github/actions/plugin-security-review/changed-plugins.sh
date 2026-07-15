@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 #
-# List installed third-party plugin directories whose Composer package was added or
+# List installed third-party plugin/theme directories whose Composer package was added or
 # changed relative to a base git ref.
 #
-# Third-party plugins are gitignored (installed by Composer at build time), so they never
-# appear in a pull request's file diff. The signal that one was added or updated is a
-# change to its entry in composer.lock.
+# Third-party plugins and themes are gitignored (installed by Composer at build time), so
+# they never appear in a pull request's file diff. The signal that one was added or updated
+# is a change to its entry in composer.lock.
 #
-# This script diffs the WordPress plugin/muplugin packages in composer.lock between the
-# base ref and the working tree, then maps each changed package to its installed directory
-# (which must already be present — run `composer install` first).
+# This script diffs the WordPress plugin/muplugin/theme packages in composer.lock between
+# the base ref and the working tree, then maps each changed package to its installed
+# directory (which must already be present — run `composer install` first).
 #
 # A package counts as changed if its name is new, its version differs, or its resolved
 # commit reference differs (i.e., we check whether branch-level package references like
 # `dev-main` without any specific version string resolve to a different commit SHA).
 #
 # Usage:  changed-plugins.sh <base-git-ref>
-# Output: one plugin directory path per line; empty if nothing changed.
+# Output: one plugin/theme directory path per line; empty if nothing changed.
 
 set -euo pipefail
 
 BASE_REF="${1:?Usage: changed-plugins.sh <base-git-ref>}"
 
-# Identity = name@version@reference for each WordPress plugin/muplugin package.
+# Identity = name@version@reference for each WordPress plugin/muplugin/theme package.
 wp_package_identities() {
 	jq -r '.packages[]
-		| select( .type == "wordpress-plugin" or .type == "wordpress-muplugin" )
+		| select( .type == "wordpress-plugin" or .type == "wordpress-muplugin" or .type == "wordpress-theme" )
 		| "\(.name)@\(.version)@\(.dist.reference // .source.reference // "")"'
 }
 
@@ -47,9 +47,9 @@ changed_packages="$(
 while IFS= read -r package; do
 	[ -z "${package}" ] && continue
 	short_name="${package##*/}"
-	# The install root (plugins/ vs client-mu-plugins/) is governed by Composer's
-	# installer-paths, but we can simply check in each folder to find the plugin.
-	for root in client-mu-plugins plugins; do
+	# The install root (plugins/, client-mu-plugins/, mu-plugins/, themes/) is governed
+	# by Composer's installer-paths, but we can simply check in each folder to find it.
+	for root in client-mu-plugins mu-plugins plugins themes; do
 		if [ -d "${root}/${short_name}" ]; then
 			printf '%s\n' "${root}/${short_name}"
 		fi
