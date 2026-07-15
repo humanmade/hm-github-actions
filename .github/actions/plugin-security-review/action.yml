@@ -11,6 +11,15 @@ inputs:
     description: Name of an installed PHPCS standard, or a path to a ruleset XML file, scanning for security issues (e.g. injection, escaping) across first- and third-party code. Defaults to HM-Minimum, which requires humanmade/coding-standards.
     default: "HM-Minimum"
     required: false
+  local_command:
+    description: >-
+      Optional display-only template for the "Run locally" hint in the review, letting you
+      show a project convenience wrapper instead of the raw phpcs command. `{path}` is replaced
+      with each flagged plugin directory (e.g. "composer check-security {path}"). This changes
+      only the suggested command text, not the scan the action runs, so the wrapper must invoke
+      the same standard as security_standard. Defaults to the raw "vendor/bin/phpcs --standard=… <path>".
+    default: ""
+    required: false
   docs_url:
     description: Optional link to project docs explaining the review process, appended to the review body.
     default: ""
@@ -45,6 +54,8 @@ runs:
       id: scan
       if: steps.detect.outputs.found == 'true'
       shell: bash
+      env:
+        LOCAL_COMMAND: ${{ inputs.local_command }}
       run: |
         # No standard was supplied, so we're relying on the HM-Minimum default. Fail loudly
         # if it isn't actually installed, rather than letting phpcs's own "standard not found"
@@ -63,7 +74,14 @@ runs:
           else
             clean=false
             total=$(printf '%s\n' "$summary" | grep -iE 'A TOTAL OF' | head -1 | sed -E 's/^[[:space:]]*//')
-            printf -- '- `%s` — %s\n  Run: `vendor/bin/phpcs --standard=%s %s`\n' "$dir" "${total:-findings present}" "${{ inputs.security_standard }}" "$dir" >> review-body.md
+            # Display-only "Run locally" hint. If a local_command template is supplied, show it
+            # with {path} replaced by the plugin dir; otherwise fall back to the raw phpcs command.
+            if [ -n "$LOCAL_COMMAND" ]; then
+              run_cmd="${LOCAL_COMMAND//\{path\}/$dir}"
+            else
+              run_cmd="vendor/bin/phpcs --standard=${{ inputs.security_standard }} $dir"
+            fi
+            printf -- '- `%s` — %s\n  Run: `%s`\n' "$dir" "${total:-findings present}" "$run_cmd" >> review-body.md
           fi
         done < changed-plugins.txt
         echo "clean=$clean" >> "$GITHUB_OUTPUT"

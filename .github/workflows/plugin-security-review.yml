@@ -21,6 +21,11 @@ on:
         default: "8.3"
         required: false
         type: string
+      local_command:
+        description: Optional display-only template for the "Run locally" hint, e.g. "composer check-security {path}" ({path} is replaced with each flagged plugin directory). Changes only the suggested command text, not the scan the workflow runs, so the wrapper must invoke the same standard as security_standard. Defaults to the raw phpcs command.
+        default: ""
+        required: false
+        type: string
       docs_url:
         description: Optional link to project docs explaining the review process, appended to the review body.
         default: ""
@@ -66,4 +71,5 @@ jobs:
         uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@def1220642eee2eac80d25a0736ab66fb274fbf7
         with:
           security_standard: ${{ inputs.security_standard }}
+          local_command: ${{ inputs.local_command }}
           docs_url: ${{ inputs.docs_url }}
