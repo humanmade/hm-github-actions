@@ -6,7 +6,10 @@ Third-party plugins and themes are typically gitignored and installed by Compose
 
 If the standard reports findings, the action posts a **Request changes** review (via `GITHUB_TOKEN`) naming each plugin and the exact command to re-run the scan locally. The job itself always exits successfully, but this review creates intentional friction by requiring a human to dismiss the review in order to unblock merge. This avoids hard-blocking CI on the false positives that third-party plugins routinely trigger, while still surfacing findings that may be real.
 
-The review is keyed to the head commit SHA: re-running the workflow will not stack duplicate reviews for the same commit, but a subsequent commit that changes `composer.lock` again earns a fresh review.
+The review is keyed to the set of changed packages, not to the head commit. The action fingerprints the changed `name@version@reference` identities and records that fingerprint in the review body as an HTML comment. If a review carrying the same fingerprint is already on the pull request, no second review is posted — so ordinary pushes to the branch will not re-request changes a human has already dismissed. Changing any package version or reference produces a different fingerprint, which is new code and earns a fresh review.
+
+> [!NOTE]
+> Because the fingerprint covers the packages rather than the scan output, editing the security ruleset itself mid-PR will not re-post a review for packages already reported. Re-run the scan locally if you change the standard.
 
 Packages are located by checking the installer-paths roots commonly used across WordPress projects, `client-mu-plugins/<name>`, `mu-plugins/<name>`, `plugins/<name>`, and `themes/<name>`.
 

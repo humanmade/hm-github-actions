@@ -40,10 +40,13 @@ runs:
       id: detect
       shell: bash
       run: |
-        bash "${{ github.action_path }}/changed-plugins.sh" "${{ github.event.pull_request.base.sha }}" > changed-plugins.txt
+        bash "${{ github.action_path }}/changed-plugins.sh" "${{ github.event.pull_request.base.sha }}" changed-identities.txt > changed-plugins.txt
         if [ -s changed-plugins.txt ]; then
           echo "Detected plugin changes:"
           cat changed-plugins.txt
+          # Hash of the exact package versions under review, used below to avoid re-reviewing
+          # a set of package changes this PR has already been told about.
+          echo "fingerprint=$( sha256sum changed-identities.txt | cut -d ' ' -f 1 )" >> "$GITHUB_OUTPUT"
           echo "found=true" >> "$GITHUB_OUTPUT"
         else
           echo "No third-party plugin additions or updates detected."
@@ -89,25 +92,31 @@ runs:
     - name: Request manual security review
       if: steps.scan.outputs.clean == 'false'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        FINGERPRINT: ${{ steps.detect.outputs.fingerprint }}
       with:
         script: |
           const fs = require('fs');
           const findings = fs.readFileSync('review-body.md', 'utf8').trim();
           const { owner, repo } = context.repo;
           const pull_number = context.payload.pull_request.number;
-          const headSha = context.payload.pull_request.head.sha;
 
-          // Idempotency: one review per head commit. New commits re-trigger a
-          // review (new code must be re-verified); a human's dismissal of the
-          // review for the current commit is preserved across workflow re-runs.
+          // Idempotency: one review per set of package changes, identified by a marker
+          // carrying the fingerprint of the changed name@version@reference identities.
+          // Keying on the packages rather than on the head commit means an unrelated
+          // push to the branch does not re-request changes a human has already
+          // dismissed, while any further package change is new code that earns a
+          // fresh review.
+          const marker = `<!-- plugin-security-review: ${process.env.FINGERPRINT} -->`;
+
           const reviews = await github.paginate(github.rest.pulls.listReviews, {
             owner, repo, pull_number,
           });
           const alreadyReviewed = reviews.some(
-            (r) => r.user?.login === 'github-actions[bot]' && r.commit_id === headSha
+            (r) => r.user?.login === 'github-actions[bot]' && r.body?.includes(marker)
           );
           if (alreadyReviewed) {
-            core.info('This commit already has a bot review; not posting another.');
+            core.info('These package changes have already been reviewed on this PR; not posting another review.');
             return;
           }
 
@@ -127,6 +136,8 @@ runs:
             '2. Inspect flagged areas and confirm the code is fit for purpose — distinguishing real vulnerabilities from false positives.',
             '3. **Dismiss this review** to record that you have verified it and to unblock merge.',
             docsUrl ? `\nFull process: ${docsUrl}` : '',
+            '',
+            marker,
           ].join('\n');
 
           await github.rest.pulls.createReview({
