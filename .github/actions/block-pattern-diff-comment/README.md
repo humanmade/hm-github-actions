@@ -27,7 +27,7 @@ jobs:
   comment:
     runs-on: ubuntu-latest
     steps:
-      - uses: humanmade/hm-github-actions/.github/actions/block-pattern-diff-comment@2c2360ec0747e0e2ac527f185dfc5860b70030c0 # pattern-diff-action
+      - uses: humanmade/hm-github-actions/.github/actions/block-pattern-diff-comment@d56090684cf7794e817a2b3ae747d99d517c42c6 # pattern-diff-action
         with:
           theme_directories: themes/my-theme
 ```
