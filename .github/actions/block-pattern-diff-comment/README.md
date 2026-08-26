@@ -65,7 +65,7 @@ The default `file_pattern` is:
 ^(patterns/.+\.(php|html)|templates/.+\.html|parts/.+\.html|[^/]+\.html)$
 ```
 
-That covers registered patterns, block templates, template parts, and HTML files at the theme root, which is where block markup lives in a block theme. It deliberately ignores `functions.php`, stylesheets, and `theme.json`: those change how patterns render but are not themselves block markup, so there is nothing for a block tree to show.
+That covers registered patterns, block templates, template parts, and HTML files at the theme root, which is where block markup lives in a block theme. Added, modified, renamed, and deleted files all count: removing a pattern is exactly the kind of change worth looking at, and the tool renders it as a fully removed block tree. It deliberately ignores `functions.php`, stylesheets, and `theme.json`: those change how patterns render but are not themselves block markup, so there is nothing for a block tree to show.
 
 ## Outputs
 
@@ -81,6 +81,10 @@ Output | Description
 **The diff travels inside the link.** Nothing is uploaded anywhere. The matched sections of the diff are gzipped and base64url-encoded into the query string, and the browser decodes them. Block markup compresses hard, so a twenty-file change still lands around a kilobyte.
 
 **Large pull requests are split across several links.** GitHub Pages answers `414` past roughly 8190 characters of URL, so one link cannot always carry a whole pull request. Files are packed whole into as few links as fit under `max_url_length`, each link being a complete diff of the files it lists. The comment shows a single link when everything fits and a collapsed list of parts when it does not. A single file whose own diff will not fit is listed as unlinkable rather than being split mid-file, which would produce a diff the tool could not parse.
+
+**The comment stays within GitHub's size limit.** A comment body caps out at 65,536 characters, and near-limit links are roughly 8 kB each, so a large enough pull request could otherwise build a comment that cannot be posted at all. Links are added until the body approaches that ceiling, and any remainder is reported as omitted rather than silently dropped.
+
+**Filenames are escaped.** They come from the pull request, so they are HTML-escaped and rendered in `<code>` elements. A backtick in a filename would otherwise close a Markdown code span and let pull-request-controlled text render as markup inside a comment written by the bot.
 
 **Unchanged diffs are not rewritten.** If a push does not alter the pattern diff, the existing comment is left alone rather than edited, so subscribers are not re-notified. This relies on the payload being deterministic, which is why the action gzips with `-n` — without it the header timestamp would change on every run.
 

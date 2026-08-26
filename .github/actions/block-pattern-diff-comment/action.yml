@@ -83,14 +83,16 @@ runs:
         # Everything comes from the API rather than a checkout: no working copy
         # is needed, and nothing from the pull request is ever executed. That is
         # what makes this safe to run on pull_request_target for forks.
+        # Deletions are included: removing a pattern is exactly the kind of change
+        # worth seeing, and the tool renders it as a fully removed block tree.
         gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
-          --jq '.[] | select(.status != "removed") | .filename' > "$RUNNER_TEMP/all-files.txt"
+          --jq '.[] | .filename' > "$RUNNER_TEMP/all-files.txt"
 
         # Keep files that sit under one of the watched theme directories and
         # match the pattern once that directory prefix is stripped.
         : > "$RUNNER_TEMP/matched.txt"
         while IFS= read -r dir; do
-          dir="$(echo "$dir" | tr -d '[:space:]')"
+          dir="$(echo "$dir" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           [ -n "$dir" ] || continue
           if [ "$dir" = "." ]; then
             prefix=""
@@ -141,6 +143,7 @@ runs:
 
         awk -v WANTED="$RUNNER_TEMP/matched.txt" -v OUT="$chunks" '
           function flush() {
+            resolve()
             if ( keep && buffer != "" ) {
               n++
               printf "%s", buffer > ( OUT "/" sprintf( "%04d", n ) ".diff" )
@@ -148,11 +151,13 @@ runs:
               print path > ( OUT "/" sprintf( "%04d", n ) ".path" )
               close( OUT "/" sprintf( "%04d", n ) ".path" )
             }
-            buffer = ""; keep = 0; decided = 0; path = ""
+            buffer = ""; keep = 0; path = ""; plus = ""; minus = ""
           }
-          function decide( candidate ) {
-            if ( decided || candidate == "/dev/null" ) return
-            keep = ( candidate in wanted ); path = candidate; decided = 1
+          function resolve() {
+            # The files API names a renamed file by its new path, so prefer the
+            # `+++` side and fall back to `---` only for deletions.
+            path = ( plus != "" && plus != "/dev/null" ) ? plus : minus
+            keep = ( path != "" && path != "/dev/null" && ( path in wanted ) )
           }
           BEGIN {
             while ( ( getline line < WANTED ) > 0 ) wanted[ line ] = 1
@@ -162,20 +167,18 @@ runs:
           { buffer = buffer $0 ORS }
           /^\+\+\+ / {
             tail = substr( $0, 5 )
-            if ( tail ~ /^b\// ) decide( substr( tail, 3 ) ); else decide( tail )
+            plus = ( tail ~ /^b\// ) ? substr( tail, 3 ) : tail
           }
           /^--- / {
             tail = substr( $0, 5 )
-            if ( tail ~ /^a\// ) decide( substr( tail, 3 ) ); else decide( tail )
+            minus = ( tail ~ /^a\// ) ? substr( tail, 3 ) : tail
           }
           END { flush() }
         ' "$RUNNER_TEMP/full.diff"
 
         if [ -z "$( ls -A "$chunks" 2>/dev/null )" ]; then
-          echo "::warning::Matched files but could not extract their diff sections."
-          echo "url=" >> "$GITHUB_OUTPUT"
-          echo "link_count=0" >> "$GITHUB_OUTPUT"
-          exit 0
+          echo "::error::Matched $count file(s) but extracted no diff sections for them."
+          exit 1
         fi
 
         # gzip then base64url, matching the tool's "z" payload scheme. -n omits
@@ -251,6 +254,7 @@ runs:
         URL: ${{ steps.diff.outputs.url }}
         LINK_COUNT: ${{ steps.diff.outputs.link_count }}
         COUNT: ${{ steps.diff.outputs.changed_files }}
+        SITE_URL: ${{ inputs.site_url }}
       run: |
         set -euo pipefail
 
@@ -283,6 +287,40 @@ runs:
         unlinkable="$RUNNER_TEMP/unlinkable.txt"
         link_count="${LINK_COUNT:-0}"
 
+        # Filenames come from the pull request. Rendering them in Markdown code
+        # spans would let a backtick in a filename close the span and inject
+        # markup into a comment written by the bot, so escape them and use an
+        # HTML code element instead.
+        list_files() {
+          sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+              -e "s|^|${2}- <code>|" -e 's|$|</code>|' "$1"
+        }
+
+        # GitHub rejects a comment body over 65536 characters. Near-limit links
+        # are ~8 kB each, so a large enough pull request would otherwise build a
+        # body that cannot be posted at all — failing exactly the case the
+        # batching exists to serve.
+        body_budget=60000
+
+        parts="$RUNNER_TEMP/parts.md"
+        : > "$parts"
+        shown=0
+        i=1
+        while [ "$i" -le "$link_count" ]; do
+          {
+            printf '%s. [**Part %s of %s →**](%s)\n' "$i" "$i" "$link_count" "$(cat "$links/$i.url")"
+            list_files "$links/$i.files" "    "
+          } > "$RUNNER_TEMP/part.md"
+          if [ "$(( $(wc -c < "$parts") + $(wc -c < "$RUNNER_TEMP/part.md") ))" -gt "$body_budget" ]; then
+            break
+          fi
+          cat "$RUNNER_TEMP/part.md" >> "$parts"
+          shown=$(( shown + 1 ))
+          i=$(( i + 1 ))
+        done
+        omitted=$(( link_count - shown ))
+        [ "$omitted" -eq 0 ] || echo "::notice::Omitted $omitted link(s) to keep the comment within GitHub's size limit."
+
         {
           echo "$marker"
           echo "### Block pattern changes"
@@ -296,16 +334,15 @@ runs:
           elif [ "$link_count" -gt 1 ]; then
             # One link cannot hold the whole diff, so the files are split across
             # several. Each link is a complete diff of the files it lists.
-            printf 'The diff is too big for one link, so it is split across %s.\n' "$link_count links"
+            printf 'The diff is too big for one link, so it is split across %s links.\n' "$link_count"
             echo
             echo "<details><summary>View the structural diff</summary>"
             echo
-            i=1
-            while [ "$i" -le "$link_count" ]; do
-              printf '%s. [**Part %s of %s →**](%s)\n' "$i" "$i" "$link_count" "$(cat "$links/$i.url")"
-              sed 's/^/    - `/; s/$/`/' "$links/$i.files"
-              i=$(( i + 1 ))
-            done
+            cat "$parts"
+            if [ "$omitted" -gt 0 ]; then
+              echo
+              printf '%s further part(s) are not listed, because the comment would exceed the size GitHub accepts.\n' "$omitted"
+            fi
             echo
             echo "</details>"
             echo
@@ -314,20 +351,22 @@ runs:
           if [ -s "$unlinkable" ]; then
             count=$(wc -l < "$unlinkable" | tr -d ' ')
             if [ "$link_count" -eq 0 ]; then
-              echo "The diff is too large to fit in a link. Paste it into <https://humanmade.github.io/block-pattern-diff/> to view it."
+              printf 'The diff is too large to fit in a link. Paste it into <%s> to view it.\n' "${SITE_URL%/}/"
             else
               printf 'These %s could not be linked, each being too large on its own:\n' \
                 "$( [ "$count" -eq 1 ] && echo 'file' || echo 'files' )"
             fi
             echo
-            sed 's/^/- `/; s/$/`/' "$unlinkable"
+            list_files "$unlinkable" ""
             echo
           fi
 
           if [ "$link_count" -gt 1 ]; then
             echo "Each link expands its files into a block tree, so re-nesting and migrated attributes read as moves rather than as wholesale rewrites. Nothing is uploaded: the diff travels inside the link and is decoded in your browser."
-          else
+          elif [ "$link_count" -eq 1 ]; then
             echo "The link expands the diff into a block tree, so re-nesting and migrated attributes read as moves rather than as wholesale rewrites. Nothing is uploaded: the diff travels inside the link and is decoded in your browser."
+          else
+            echo "The tool expands a diff into a block tree, so re-nesting and migrated attributes read as moves rather than as wholesale rewrites. Nothing is uploaded: a diff is decoded in your browser."
           fi
 
           # When the diff is split, the parts above already name every file, so
@@ -336,7 +375,7 @@ runs:
             echo
             echo "<details><summary>Files</summary>"
             echo
-            sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/matched.txt"
+            list_files "$RUNNER_TEMP/matched.txt" ""
             echo
             echo "</details>"
           fi
