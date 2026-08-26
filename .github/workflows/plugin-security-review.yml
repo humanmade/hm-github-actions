@@ -1,0 +1,75 @@
+# This workflow turns a third-party plugin/theme security scan into a human-dismissable
+# gate: it detects plugins and themes added or updated via composer.lock, scans only those
+# directories with a security PHPCS standard (HM-Minimum by default), and — if findings are
+# present — requests changes on the PR rather than failing the check. A human
+# reviews the findings and dismisses the review to unblock merge.
+#
+# The caller's own `on:` trigger controls which PRs this runs for (e.g. paths:
+# composer.json/composer.lock); this reusable workflow only defines the job.
+name: Plugin Security Review
+
+on:
+  workflow_call:
+    inputs:
+      security_standard:
+        description: Name of an installed PHPCS standard or a path to a ruleset XML file for scanning for security issues (e.g. injection, escaping) across first- and third-party code. Defaults to HM-Minimum, which requires humanmade/coding-standards be installed in the consuming application.
+        default: "HM-Minimum"
+        required: false
+        type: string
+      php_version:
+        description: PHP version to use for Composer and PHPCS.
+        default: "8.3"
+        required: false
+        type: string
+      local_command:
+        description: Optional display-only template for the "Run locally" hint, e.g. "composer check-security {path}" ({path} is replaced with each flagged plugin directory). Changes only the suggested command text, not the scan the workflow runs, so the wrapper must invoke the same standard as security_standard. Defaults to the raw phpcs command.
+        default: ""
+        required: false
+        type: string
+      docs_url:
+        description: Optional link to project docs explaining the review process, appended to the review body.
+        default: ""
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  plugin-security-review:
+    name: Plugin Security Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so the action can read composer.lock at the PR base commit.
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2.37.0
+        with:
+          php-version: ${{ inputs.php_version }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Review changed plugins
+        uses: humanmade/hm-github-actions/.github/actions/plugin-security-review@7a43ab08912a043659fa4492711d2921d79e57ea
+        with:
+          security_standard: ${{ inputs.security_standard }}
+          local_command: ${{ inputs.local_command }}
+          docs_url: ${{ inputs.docs_url }}
