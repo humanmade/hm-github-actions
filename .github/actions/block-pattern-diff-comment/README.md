@@ -56,7 +56,7 @@ Input | Default | Description
 `site_url` | `https://humanmade.github.io/block-pattern-diff/` | Base URL of the tool.
 `view` | `unified` | Which view the link opens: `unified` or `sbs`.
 `comment_id` | `block-pattern-diff` | Identifier embedded in the comment so it can be found later. Change it if you run the action twice on one pull request.
-`max_url_length` | `8000` | Longest link to post. Past this the comment still lists the files but says the diff was too large to link.
+`max_url_length` | `8000` | Longest link to build. Files are packed into as few links as fit under this. Raising it much produces links that 414.
 `github_token` | `${{ github.token }}` | Token used for API calls.
 
 The default `file_pattern` is:
@@ -71,13 +71,16 @@ That covers registered patterns, block templates, template parts, and HTML files
 
 Output | Description
 --- | ---
-`url` | The link that was posted. Empty when nothing matched or the diff was too large.
+`url` | The first link posted. Empty when nothing could be linked.
+`link_count` | How many links the diff was split across.
 `changed_files` | Number of matched files.
 `comment_action` | `created`, `updated`, `unchanged`, `deleted`, or `none`.
 
 ## Behaviour worth knowing
 
 **The diff travels inside the link.** Nothing is uploaded anywhere. The matched sections of the diff are gzipped and base64url-encoded into the query string, and the browser decodes them. Block markup compresses hard, so a twenty-file change still lands around a kilobyte.
+
+**Large pull requests are split across several links.** GitHub Pages answers `414` past roughly 8190 characters of URL, so one link cannot always carry a whole pull request. Files are packed whole into as few links as fit under `max_url_length`, each link being a complete diff of the files it lists. The comment shows a single link when everything fits and a collapsed list of parts when it does not. A single file whose own diff will not fit is listed as unlinkable rather than being split mid-file, which would produce a diff the tool could not parse.
 
 **Unchanged diffs are not rewritten.** If a push does not alter the pattern diff, the existing comment is left alone rather than edited, so subscribers are not re-notified. This relies on the payload being deterministic, which is why the action gzips with `-n` — without it the header timestamp would change on every run.
 

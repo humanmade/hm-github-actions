@@ -32,8 +32,9 @@ inputs:
     required: false
   max_url_length:
     description: |
-      Longest link to post. Beyond this the comment still lists the changed
-      files but says the diff was too large to link.
+      Longest link to build. Files are packed into as few links as fit under
+      this. GitHub Pages answers 414 past roughly 8190 characters, so raising
+      this much above the default will produce links that do not load.
     default: "8000"
     required: false
   github_token:
@@ -43,8 +44,11 @@ inputs:
 
 outputs:
   url:
-    description: The Block Pattern Diff link, empty if no relevant files changed or the diff was too large.
+    description: The first Block Pattern Diff link, empty if nothing could be linked.
     value: ${{ steps.diff.outputs.url }}
+  link_count:
+    description: How many links the diff was split across.
+    value: ${{ steps.diff.outputs.link_count }}
   changed_files:
     description: Number of pattern or template files changed.
     value: ${{ steps.diff.outputs.changed_files }}
@@ -114,6 +118,7 @@ runs:
         if [ "$count" -eq 0 ]; then
           echo "No pattern or template changes in the watched directories."
           echo "url=" >> "$GITHUB_OUTPUT"
+          echo "link_count=0" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
@@ -123,23 +128,37 @@ runs:
         gh api "repos/$REPO/pulls/$PR_NUMBER" \
           -H "Accept: application/vnd.github.diff" > "$RUNNER_TEMP/full.diff"
 
-        # Keep only the matched files' sections of the diff. The decision is made
-        # on the `+++ b/` line rather than the `diff --git` line, because that
-        # line holds a single path and so stays unambiguous when a path contains
-        # a space. Deleted files carry `+++ /dev/null`, so fall back to `--- a/`.
-        awk -v WANTED="$RUNNER_TEMP/matched.txt" '
+        # Split the diff into one file per changed path, keeping only the matched
+        # ones. The decision is made on the `+++ b/` line rather than the
+        # `diff --git` line, because that line holds a single path and so stays
+        # unambiguous when a path contains a space. Deleted files carry
+        # `+++ /dev/null`, so fall back to `--- a/`.
+        #
+        # `index <sha>..<sha>` lines are dropped: the tool never reads them, and
+        # they are pure payload.
+        chunks="$RUNNER_TEMP/chunks"
+        rm -rf "$chunks" && mkdir -p "$chunks"
+
+        awk -v WANTED="$RUNNER_TEMP/matched.txt" -v OUT="$chunks" '
           function flush() {
-            if ( keep && buffer != "" ) printf "%s", buffer
-            buffer = ""; keep = 0; decided = 0
+            if ( keep && buffer != "" ) {
+              n++
+              printf "%s", buffer > ( OUT "/" sprintf( "%04d", n ) ".diff" )
+              close( OUT "/" sprintf( "%04d", n ) ".diff" )
+              print path > ( OUT "/" sprintf( "%04d", n ) ".path" )
+              close( OUT "/" sprintf( "%04d", n ) ".path" )
+            }
+            buffer = ""; keep = 0; decided = 0; path = ""
           }
-          function decide( path ) {
-            if ( decided || path == "/dev/null" ) return
-            keep = ( path in wanted ); decided = 1
+          function decide( candidate ) {
+            if ( decided || candidate == "/dev/null" ) return
+            keep = ( candidate in wanted ); path = candidate; decided = 1
           }
           BEGIN {
             while ( ( getline line < WANTED ) > 0 ) wanted[ line ] = 1
           }
           /^diff --git / { flush(); buffer = $0 ORS; next }
+          /^index [0-9a-f]+\.\.[0-9a-f]+/ { next }
           { buffer = buffer $0 ORS }
           /^\+\+\+ / {
             tail = substr( $0, 5 )
@@ -150,31 +169,76 @@ runs:
             if ( tail ~ /^a\// ) decide( substr( tail, 3 ) ); else decide( tail )
           }
           END { flush() }
-        ' "$RUNNER_TEMP/full.diff" > "$RUNNER_TEMP/pattern.diff"
+        ' "$RUNNER_TEMP/full.diff"
 
-        if [ ! -s "$RUNNER_TEMP/pattern.diff" ]; then
+        if [ -z "$( ls -A "$chunks" 2>/dev/null )" ]; then
           echo "::warning::Matched files but could not extract their diff sections."
           echo "url=" >> "$GITHUB_OUTPUT"
+          echo "link_count=0" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
         # gzip then base64url, matching the tool's "z" payload scheme. -n omits
         # the timestamp and filename from the header, so an unchanged diff always
         # encodes to the same string and the comment is not rewritten needlessly.
-        payload=$(gzip -n -9 -c "$RUNNER_TEMP/pattern.diff" \
-          | base64 -w0 \
-          | tr '+/' '-_' \
-          | tr -d '=')
-        url="${SITE_URL%/}/?d=z${payload}&view=${VIEW}"
+        encode_url() {
+          local payload
+          payload=$(gzip -n -9 -c "$1" | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          printf '%s/?d=z%s&view=%s' "${SITE_URL%/}" "$payload" "$VIEW"
+        }
 
-        if [ "${#url}" -gt "$MAX_URL_LENGTH" ]; then
-          echo "::notice::Diff encodes to ${#url} characters, over the ${MAX_URL_LENGTH} limit; linking is skipped."
-          echo "url=" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
+        # Pack whole files into as few links as possible. GitHub Pages answers
+        # 414 past roughly 8 kB of URL, so one link cannot always carry a whole
+        # pull request. Packing rather than one-link-per-file keeps related
+        # files together and keeps the comment short; it falls back to one file
+        # per link naturally when the files are large.
+        links="$RUNNER_TEMP/links"
+        rm -rf "$links" && mkdir -p "$links"
+        : > "$RUNNER_TEMP/unlinkable.txt"
 
-        echo "Link is ${#url} characters."
-        echo "url=$url" >> "$GITHUB_OUTPUT"
+        group=0
+        pending="$RUNNER_TEMP/pending.diff"
+        : > "$pending"
+        pending_files="$RUNNER_TEMP/pending.txt"
+        : > "$pending_files"
+
+        emit_group() {
+          [ -s "$pending" ] || return 0
+          group=$(( group + 1 ))
+          encode_url "$pending" > "$links/$group.url"
+          cp "$pending_files" "$links/$group.files"
+          : > "$pending"
+          : > "$pending_files"
+        }
+
+        for chunk in "$chunks"/*.diff; do
+          path=$(cat "${chunk%.diff}.path")
+          cat "$pending" "$chunk" > "$RUNNER_TEMP/candidate.diff"
+          candidate_url=$(encode_url "$RUNNER_TEMP/candidate.diff")
+          if [ "${#candidate_url}" -le "$MAX_URL_LENGTH" ]; then
+            mv "$RUNNER_TEMP/candidate.diff" "$pending"
+            echo "$path" >> "$pending_files"
+            continue
+          fi
+
+          # Adding this file overflowed. Close the group and start a new one
+          # with just this file, unless it does not fit on its own either.
+          emit_group
+          solo_url=$(encode_url "$chunk")
+          if [ "${#solo_url}" -le "$MAX_URL_LENGTH" ]; then
+            cp "$chunk" "$pending"
+            echo "$path" > "$pending_files"
+          else
+            echo "$path" >> "$RUNNER_TEMP/unlinkable.txt"
+            echo "::notice::$path is too large to link on its own (${#solo_url} characters)."
+          fi
+        done
+        emit_group
+
+        link_count=$group
+        echo "link_count=$link_count" >> "$GITHUB_OUTPUT"
+        echo "url=$( [ "$link_count" -ge 1 ] && cat "$links/1.url" || echo '' )" >> "$GITHUB_OUTPUT"
+        echo "Built $link_count link(s); $(wc -l < "$RUNNER_TEMP/unlinkable.txt" | tr -d ' ') file(s) too large to link."
 
     - name: Create, update or remove the comment
       id: comment
@@ -185,6 +249,7 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         COMMENT_ID: ${{ inputs.comment_id }}
         URL: ${{ steps.diff.outputs.url }}
+        LINK_COUNT: ${{ steps.diff.outputs.link_count }}
         COUNT: ${{ steps.diff.outputs.changed_files }}
       run: |
         set -euo pipefail
@@ -214,25 +279,67 @@ runs:
           subject="$COUNT pattern and template files"
         fi
 
+        links="$RUNNER_TEMP/links"
+        unlinkable="$RUNNER_TEMP/unlinkable.txt"
+        link_count="${LINK_COUNT:-0}"
+
         {
           echo "$marker"
           echo "### Block pattern changes"
           echo
-          if [ -n "$URL" ]; then
-            printf 'This pull request changes %s. ' "$subject"
-            printf '[**View the structural diff →**](%s)\n' "$URL"
+          printf 'This pull request changes %s.\n' "$subject"
+          echo
+
+          if [ "$link_count" -eq 1 ]; then
+            printf '[**View the structural diff →**](%s)\n' "$(cat "$links/1.url")"
             echo
-            echo "The link expands the diff into a block tree, so re-nesting and migrated attributes read as moves rather than as wholesale rewrites. Nothing is uploaded: the diff travels inside the link and is decoded in your browser."
-          else
-            printf 'This pull request changes %s, ' "$subject"
-            echo "but the diff is too large to fit in a link. Paste it into <https://humanmade.github.io/block-pattern-diff/> to view it."
+          elif [ "$link_count" -gt 1 ]; then
+            # One link cannot hold the whole diff, so the files are split across
+            # several. Each link is a complete diff of the files it lists.
+            printf 'The diff is too big for one link, so it is split across %s.\n' "$link_count links"
+            echo
+            echo "<details><summary>View the structural diff</summary>"
+            echo
+            i=1
+            while [ "$i" -le "$link_count" ]; do
+              printf '%s. [**Part %s of %s →**](%s)\n' "$i" "$i" "$link_count" "$(cat "$links/$i.url")"
+              sed 's/^/    - `/; s/$/`/' "$links/$i.files"
+              i=$(( i + 1 ))
+            done
+            echo
+            echo "</details>"
+            echo
           fi
-          echo
-          echo "<details><summary>Files</summary>"
-          echo
-          sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/matched.txt"
-          echo
-          echo "</details>"
+
+          if [ -s "$unlinkable" ]; then
+            count=$(wc -l < "$unlinkable" | tr -d ' ')
+            if [ "$link_count" -eq 0 ]; then
+              echo "The diff is too large to fit in a link. Paste it into <https://humanmade.github.io/block-pattern-diff/> to view it."
+            else
+              printf 'These %s could not be linked, each being too large on its own:\n' \
+                "$( [ "$count" -eq 1 ] && echo 'file' || echo 'files' )"
+            fi
+            echo
+            sed 's/^/- `/; s/$/`/' "$unlinkable"
+            echo
+          fi
+
+          if [ "$link_count" -gt 1 ]; then
+            echo "Each link expands its files into a block tree, so re-nesting and migrated attributes read as moves rather than as wholesale rewrites. Nothing is uploaded: the diff travels inside the link and is decoded in your browser."
+          else
+            echo "The link expands the diff into a block tree, so re-nesting and migrated attributes read as moves rather than as wholesale rewrites. Nothing is uploaded: the diff travels inside the link and is decoded in your browser."
+          fi
+
+          # When the diff is split, the parts above already name every file, so
+          # repeating the list here would just be noise.
+          if [ "$link_count" -le 1 ]; then
+            echo
+            echo "<details><summary>Files</summary>"
+            echo
+            sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/matched.txt"
+            echo
+            echo "</details>"
+          fi
         } > "$RUNNER_TEMP/comment.md"
 
         if [ -n "$existing" ]; then
