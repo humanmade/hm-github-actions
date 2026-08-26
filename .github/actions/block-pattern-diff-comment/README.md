@@ -27,10 +27,12 @@ jobs:
   comment:
     runs-on: ubuntu-latest
     steps:
-      - uses: humanmade/hm-github-actions/.github/actions/block-pattern-diff-comment@main
+      - uses: humanmade/hm-github-actions/.github/actions/block-pattern-diff-comment@7efc1ba0be1393ce219ee4f8aa97a7da48bf8017 # pattern-diff-action
         with:
           theme_directories: themes/my-theme
 ```
+
+That SHA is the tip of the `pattern-diff-action` branch, which is enough to run the action before it is merged. Re-pin it to a release tag's SHA once this lands, the way the other actions here are pinned. A squash merge would leave the branch commits unreachable and break the reference, so do not leave it pointing at a branch tip.
 
 Several themes in one repository, one directory per line:
 
