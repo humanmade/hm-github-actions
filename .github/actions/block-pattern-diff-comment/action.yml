@@ -1,0 +1,256 @@
+name: Block pattern diff comment
+description: Comments on a pull request with a link to a structural diff of any changed block pattern or template files, updating or removing the comment as the pull request changes.
+author: Human Made
+
+inputs:
+  theme_directories:
+    description: |
+      Theme directories to watch, one per line. Use "." for a repository that
+      is itself a theme. Paths are relative to the repository root.
+    default: "."
+    required: false
+  file_pattern:
+    description: |
+      Extended regular expression matched against each changed file's path
+      relative to a theme directory. The default covers block patterns,
+      templates, template parts, and HTML files at the theme root.
+    default: '^(patterns/.+\.(php|html)|templates/.+\.html|parts/.+\.html|[^/]+\.html)$'
+    required: false
+  site_url:
+    description: Base URL of the Block Pattern Diff tool.
+    default: "https://humanmade.github.io/block-pattern-diff/"
+    required: false
+  view:
+    description: Which view the link opens; "unified" or "sbs".
+    default: unified
+    required: false
+  comment_id:
+    description: |
+      Identifier embedded in the comment so it can be found and updated later.
+      Change it if you run this action more than once on the same pull request.
+    default: block-pattern-diff
+    required: false
+  max_url_length:
+    description: |
+      Longest link to post. Beyond this the comment still lists the changed
+      files but says the diff was too large to link.
+    default: "8000"
+    required: false
+  github_token:
+    description: Token used for GitHub API calls. Defaults to the job's GITHUB_TOKEN.
+    default: ${{ github.token }}
+    required: false
+
+outputs:
+  url:
+    description: The Block Pattern Diff link, empty if no relevant files changed or the diff was too large.
+    value: ${{ steps.diff.outputs.url }}
+  changed_files:
+    description: Number of pattern or template files changed.
+    value: ${{ steps.diff.outputs.changed_files }}
+  comment_action:
+    description: What happened to the comment — created, updated, unchanged, deleted, or none.
+    value: ${{ steps.comment.outputs.comment_action }}
+
+runs:
+  using: composite
+
+  steps:
+    - name: Collect the pattern diff
+      id: diff
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        THEME_DIRECTORIES: ${{ inputs.theme_directories }}
+        FILE_PATTERN: ${{ inputs.file_pattern }}
+        SITE_URL: ${{ inputs.site_url }}
+        VIEW: ${{ inputs.view }}
+        MAX_URL_LENGTH: ${{ inputs.max_url_length }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${PR_NUMBER:-}" ]; then
+          echo "::error::This action must run on a pull_request or pull_request_target event."
+          exit 1
+        fi
+
+        # Everything comes from the API rather than a checkout: no working copy
+        # is needed, and nothing from the pull request is ever executed. That is
+        # what makes this safe to run on pull_request_target for forks.
+        gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+          --jq '.[] | select(.status != "removed") | .filename' > "$RUNNER_TEMP/all-files.txt"
+
+        # Keep files that sit under one of the watched theme directories and
+        # match the pattern once that directory prefix is stripped.
+        : > "$RUNNER_TEMP/matched.txt"
+        while IFS= read -r dir; do
+          dir="$(echo "$dir" | tr -d '[:space:]')"
+          [ -n "$dir" ] || continue
+          if [ "$dir" = "." ]; then
+            prefix=""
+          else
+            prefix="${dir%/}/"
+          fi
+          while IFS= read -r file; do
+            case "$file" in
+              "$prefix"*) relative="${file#"$prefix"}" ;;
+              *) continue ;;
+            esac
+            # A file directly under the repo root can only match when the theme
+            # directory is "."; otherwise the prefix strip above did nothing.
+            [ -n "$prefix" ] || [ "$dir" = "." ] || continue
+            if echo "$relative" | grep -Eq "$FILE_PATTERN"; then
+              echo "$file" >> "$RUNNER_TEMP/matched.txt"
+            fi
+          done < "$RUNNER_TEMP/all-files.txt"
+        done <<< "$THEME_DIRECTORIES"
+
+        sort -u "$RUNNER_TEMP/matched.txt" -o "$RUNNER_TEMP/matched.txt"
+        count=$(wc -l < "$RUNNER_TEMP/matched.txt" | tr -d ' ')
+        echo "changed_files=$count" >> "$GITHUB_OUTPUT"
+
+        if [ "$count" -eq 0 ]; then
+          echo "No pattern or template changes in the watched directories."
+          echo "url=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Matched $count file(s):"
+        sed 's/^/  /' "$RUNNER_TEMP/matched.txt"
+
+        gh api "repos/$REPO/pulls/$PR_NUMBER" \
+          -H "Accept: application/vnd.github.diff" > "$RUNNER_TEMP/full.diff"
+
+        # Keep only the matched files' sections of the diff. The decision is made
+        # on the `+++ b/` line rather than the `diff --git` line, because that
+        # line holds a single path and so stays unambiguous when a path contains
+        # a space. Deleted files carry `+++ /dev/null`, so fall back to `--- a/`.
+        awk -v WANTED="$RUNNER_TEMP/matched.txt" '
+          function flush() {
+            if ( keep && buffer != "" ) printf "%s", buffer
+            buffer = ""; keep = 0; decided = 0
+          }
+          function decide( path ) {
+            if ( decided || path == "/dev/null" ) return
+            keep = ( path in wanted ); decided = 1
+          }
+          BEGIN {
+            while ( ( getline line < WANTED ) > 0 ) wanted[ line ] = 1
+          }
+          /^diff --git / { flush(); buffer = $0 ORS; next }
+          { buffer = buffer $0 ORS }
+          /^\+\+\+ / {
+            tail = substr( $0, 5 )
+            if ( tail ~ /^b\// ) decide( substr( tail, 3 ) ); else decide( tail )
+          }
+          /^--- / {
+            tail = substr( $0, 5 )
+            if ( tail ~ /^a\// ) decide( substr( tail, 3 ) ); else decide( tail )
+          }
+          END { flush() }
+        ' "$RUNNER_TEMP/full.diff" > "$RUNNER_TEMP/pattern.diff"
+
+        if [ ! -s "$RUNNER_TEMP/pattern.diff" ]; then
+          echo "::warning::Matched files but could not extract their diff sections."
+          echo "url=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # gzip then base64url, matching the tool's "z" payload scheme. -n omits
+        # the timestamp and filename from the header, so an unchanged diff always
+        # encodes to the same string and the comment is not rewritten needlessly.
+        payload=$(gzip -n -9 -c "$RUNNER_TEMP/pattern.diff" \
+          | base64 -w0 \
+          | tr '+/' '-_' \
+          | tr -d '=')
+        url="${SITE_URL%/}/?d=z${payload}&view=${VIEW}"
+
+        if [ "${#url}" -gt "$MAX_URL_LENGTH" ]; then
+          echo "::notice::Diff encodes to ${#url} characters, over the ${MAX_URL_LENGTH} limit; linking is skipped."
+          echo "url=" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Link is ${#url} characters."
+        echo "url=$url" >> "$GITHUB_OUTPUT"
+
+    - name: Create, update or remove the comment
+      id: comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMMENT_ID: ${{ inputs.comment_id }}
+        URL: ${{ steps.diff.outputs.url }}
+        COUNT: ${{ steps.diff.outputs.changed_files }}
+      run: |
+        set -euo pipefail
+
+        marker="<!-- block-pattern-diff:${COMMENT_ID} -->"
+
+        # Find our previous comment, if any, by its hidden marker.
+        existing=$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+          --jq "[ .[] | select( .body | contains(\"$marker\") ) ] | first | .id // empty")
+
+        # No relevant files left: take the comment down rather than leaving a
+        # link to a diff that no longer exists.
+        if [ "$COUNT" -eq 0 ]; then
+          if [ -n "$existing" ]; then
+            gh api -X DELETE "repos/$REPO/issues/comments/$existing"
+            echo "Removed the previous comment; no pattern changes remain."
+            echo "comment_action=deleted" >> "$GITHUB_OUTPUT"
+          else
+            echo "comment_action=none" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+        fi
+
+        if [ "$COUNT" -eq 1 ]; then
+          subject="1 pattern or template file"
+        else
+          subject="$COUNT pattern and template files"
+        fi
+
+        {
+          echo "$marker"
+          echo "### Block pattern changes"
+          echo
+          if [ -n "$URL" ]; then
+            printf 'This pull request changes %s. ' "$subject"
+            printf '[**View the structural diff →**](%s)\n' "$URL"
+            echo
+            echo "The link expands the diff into a block tree, so re-nesting and migrated attributes read as moves rather than as wholesale rewrites. Nothing is uploaded: the diff travels inside the link and is decoded in your browser."
+          else
+            printf 'This pull request changes %s, ' "$subject"
+            echo "but the diff is too large to fit in a link. Paste it into <https://humanmade.github.io/block-pattern-diff/> to view it."
+          fi
+          echo
+          echo "<details><summary>Files</summary>"
+          echo
+          sed 's/^/- `/; s/$/`/' "$RUNNER_TEMP/matched.txt"
+          echo
+          echo "</details>"
+        } > "$RUNNER_TEMP/comment.md"
+
+        if [ -n "$existing" ]; then
+          # Skip the write when nothing changed, so pushes that do not touch
+          # patterns don't re-notify everyone subscribed to the pull request.
+          current=$(gh api "repos/$REPO/issues/comments/$existing" --jq .body)
+          if [ "$current" = "$(cat "$RUNNER_TEMP/comment.md")" ]; then
+            echo "Comment is already up to date."
+            echo "comment_action=unchanged" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh api -X PATCH "repos/$REPO/issues/comments/$existing" \
+            -F "body=@$RUNNER_TEMP/comment.md" > /dev/null
+          echo "Updated the existing comment."
+          echo "comment_action=updated" >> "$GITHUB_OUTPUT"
+        else
+          gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" \
+            -F "body=@$RUNNER_TEMP/comment.md" > /dev/null
+          echo "Posted a new comment."
+          echo "comment_action=created" >> "$GITHUB_OUTPUT"
+        fi
