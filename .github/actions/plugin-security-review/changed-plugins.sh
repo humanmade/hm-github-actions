@@ -15,12 +15,15 @@
 # commit reference differs (i.e., we check whether branch-level package references like
 # `dev-main` without any specific version string resolve to a different commit SHA).
 #
-# Usage:  changed-plugins.sh <base-git-ref>
-# Output: one plugin/theme directory path per line; empty if nothing changed.
+# Usage:  changed-plugins.sh <base-git-ref> [changed-identities-file]
+# Output: one plugin/theme directory path per line; empty if nothing changed. If a second
+#         argument is given, the changed name@version@reference identities are also written
+#         to that path, so a caller can fingerprint exactly which package versions changed.
 
 set -euo pipefail
 
-BASE_REF="${1:?Usage: changed-plugins.sh <base-git-ref>}"
+BASE_REF="${1:?Usage: changed-plugins.sh <base-git-ref> [changed-identities-file]}"
+IDENTITIES_FILE="${2:-}"
 
 # Identity = name@version@reference for each WordPress plugin/muplugin/theme package.
 wp_package_identities() {
@@ -33,13 +36,19 @@ base_identities="$( git show "${BASE_REF}:composer.lock" 2>/dev/null | wp_packag
 head_identities="$( wp_package_identities < composer.lock | sort )"
 
 # Identities in HEAD but not in BASE = added, version-changed, or ref-changed.
-changed_packages="$(
+changed_identities="$(
 	comm -13 \
 		<( printf '%s\n' "${base_identities}" ) \
-		<( printf '%s\n' "${head_identities}" ) \
-		| sed 's/@.*//' \
-		| sort -u
+		<( printf '%s\n' "${head_identities}" )
 )"
+
+# The identity list is a fingerprint of the exact package versions under review, which the
+# caller can use to recognize a set of changes it has already reported on.
+if [ -n "${IDENTITIES_FILE}" ]; then
+	printf '%s\n' "${changed_identities}" > "${IDENTITIES_FILE}"
+fi
+
+changed_packages="$( printf '%s\n' "${changed_identities}" | sed 's/@.*//' | sort -u )"
 
 [ -z "${changed_packages}" ] && exit 0
 
