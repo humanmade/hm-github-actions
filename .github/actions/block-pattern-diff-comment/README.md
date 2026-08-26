@@ -47,15 +47,15 @@ No checkout step is needed. The action reads the changed files and the diff from
 
 ## Inputs
 
-| Input | Default | Description |
-| --- | --- | --- |
-| `theme_directories` | `.` | Theme directories to watch, one per line, relative to the repository root. |
-| `file_pattern` | see below | Extended regular expression matched against each changed file's path *relative to a theme directory*. |
-| `site_url` | `https://humanmade.github.io/block-pattern-diff/` | Base URL of the tool. |
-| `view` | `unified` | Which view the link opens: `unified` or `sbs`. |
-| `comment_id` | `block-pattern-diff` | Identifier embedded in the comment so it can be found later. Change it if you run the action twice on one pull request. |
-| `max_url_length` | `8000` | Longest link to post. Past this the comment still lists the files but says the diff was too large to link. |
-| `github_token` | `${{ github.token }}` | Token used for API calls. |
+Input | Default | Description
+--- | --- | ---
+`theme_directories` | `.` | Theme directories to watch, one per line, relative to the repository root.
+`file_pattern` | see below | Extended regular expression matched against each changed file's path *relative to a theme directory*.
+`site_url` | `https://humanmade.github.io/block-pattern-diff/` | Base URL of the tool.
+`view` | `unified` | Which view the link opens: `unified` or `sbs`.
+`comment_id` | `block-pattern-diff` | Identifier embedded in the comment so it can be found later. Change it if you run the action twice on one pull request.
+`max_url_length` | `8000` | Longest link to post. Past this the comment still lists the files but says the diff was too large to link.
+`github_token` | `${{ github.token }}` | Token used for API calls.
 
 The default `file_pattern` is:
 
@@ -67,11 +67,11 @@ That covers registered patterns, block templates, template parts, and HTML files
 
 ## Outputs
 
-| Output | Description |
-| --- | --- |
-| `url` | The link that was posted. Empty when nothing matched or the diff was too large. |
-| `changed_files` | Number of matched files. |
-| `comment_action` | `created`, `updated`, `unchanged`, `deleted`, or `none`. |
+Output | Description
+--- | ---
+`url` | The link that was posted. Empty when nothing matched or the diff was too large.
+`changed_files` | Number of matched files.
+`comment_action` | `created`, `updated`, `unchanged`, `deleted`, or `none`.
 
 ## Behaviour worth knowing
 
