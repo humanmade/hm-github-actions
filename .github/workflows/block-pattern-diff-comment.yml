@@ -17,6 +17,16 @@ on:
         default: '^(patterns/.+\.(php|html)|templates/.+\.html|parts/.+\.html|[^/]+\.html)$'
         required: false
         type: string
+      include_added:
+        description: Include files added by the pull request.
+        default: "true"
+        required: false
+        type: string
+      include_removed:
+        description: Include files the pull request deletes.
+        default: "true"
+        required: false
+        type: string
       site_url:
         description: Base URL of the Block Pattern Diff tool.
         default: "https://humanmade.github.io/block-pattern-diff/"
@@ -53,6 +63,8 @@ jobs:
         with:
           theme_directories: ${{ inputs.theme_directories }}
           file_pattern: ${{ inputs.file_pattern }}
+          include_added: ${{ inputs.include_added }}
+          include_removed: ${{ inputs.include_removed }}
           site_url: ${{ inputs.site_url }}
           view: ${{ inputs.view }}
           comment_id: ${{ inputs.comment_id }}

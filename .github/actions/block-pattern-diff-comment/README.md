@@ -53,6 +53,8 @@ Input | Default | Description
 --- | --- | ---
 `theme_directories` | `.` | Theme directories to watch, one per line, relative to the repository root.
 `file_pattern` | see below | Extended regular expression matched against each changed file's path *relative to a theme directory*.
+`include_added` | `true` | Include files the pull request adds. A new pattern renders as an all-added block tree.
+`include_removed` | `true` | Include files the pull request deletes. A deleted pattern renders as an all-removed block tree.
 `site_url` | `https://humanmade.github.io/block-pattern-diff/` | Base URL of the tool.
 `view` | `unified` | Which view the link opens: `unified` or `sbs`.
 `comment_id` | `block-pattern-diff` | Identifier embedded in the comment so it can be found later. Change it if you run the action twice on one pull request.
@@ -65,7 +67,17 @@ The default `file_pattern` is:
 ^(patterns/.+\.(php|html)|templates/.+\.html|parts/.+\.html|[^/]+\.html)$
 ```
 
-That covers registered patterns, block templates, template parts, and HTML files at the theme root, which is where block markup lives in a block theme. Added, modified, renamed, and deleted files all count: removing a pattern is exactly the kind of change worth looking at, and the tool renders it as a fully removed block tree. It deliberately ignores `functions.php`, stylesheets, and `theme.json`: those change how patterns render but are not themselves block markup, so there is nothing for a block tree to show.
+That covers registered patterns, block templates, template parts, and HTML files at the theme root, which is where block markup lives in a block theme.
+
+By default every changed file counts, whether it was added, modified, renamed, or deleted. `include_added` and `include_removed` turn off whole-file additions and deletions respectively, for a review where only edits to existing patterns are interesting:
+
+```yml
+        with:
+          theme_directories: themes/my-theme
+          include_added: false
+```
+
+Modified and renamed files are always included; there is no useful reading of this action that skips them. Both flags must be exactly `true` or `false` — anything else fails the step rather than being quietly read as false, which would silently drop files. It deliberately ignores `functions.php`, stylesheets, and `theme.json`: those change how patterns render but are not themselves block markup, so there is nothing for a block tree to show.
 
 ## Outputs
 

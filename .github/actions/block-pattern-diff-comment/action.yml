@@ -16,6 +16,19 @@ inputs:
       templates, template parts, and HTML files at the theme root.
     default: '^(patterns/.+\.(php|html)|templates/.+\.html|parts/.+\.html|[^/]+\.html)$'
     required: false
+  include_added:
+    description: |
+      Include files added by the pull request. A new pattern renders as an
+      all-added block tree. Set to false to see only changes to patterns that
+      already existed.
+    default: "true"
+    required: false
+  include_removed:
+    description: |
+      Include files the pull request deletes. A deleted pattern renders as an
+      all-removed block tree.
+    default: "true"
+    required: false
   site_url:
     description: Base URL of the Block Pattern Diff tool.
     default: "https://humanmade.github.io/block-pattern-diff/"
@@ -69,6 +82,8 @@ runs:
         PR_NUMBER: ${{ github.event.pull_request.number }}
         THEME_DIRECTORIES: ${{ inputs.theme_directories }}
         FILE_PATTERN: ${{ inputs.file_pattern }}
+        INCLUDE_ADDED: ${{ inputs.include_added }}
+        INCLUDE_REMOVED: ${{ inputs.include_removed }}
         SITE_URL: ${{ inputs.site_url }}
         VIEW: ${{ inputs.view }}
         MAX_URL_LENGTH: ${{ inputs.max_url_length }}
@@ -83,10 +98,28 @@ runs:
         # Everything comes from the API rather than a checkout: no working copy
         # is needed, and nothing from the pull request is ever executed. That is
         # what makes this safe to run on pull_request_target for forks.
-        # Deletions are included: removing a pattern is exactly the kind of change
-        # worth seeing, and the tool renders it as a fully removed block tree.
+        # Reject anything that is not a plain boolean rather than quietly
+        # reading it as false, which would silently drop files.
+        for pair in "include_added:$INCLUDE_ADDED" "include_removed:$INCLUDE_REMOVED"; do
+          name="${pair%%:*}"
+          value=$(echo "${pair#*:}" | tr '[:upper:]' '[:lower:]')
+          case "$value" in
+            true|false) ;;
+            *) echo "::error::$name must be true or false, got \"${pair#*:}\"."; exit 1 ;;
+          esac
+        done
+        INCLUDE_ADDED=$(echo "$INCLUDE_ADDED" | tr '[:upper:]' '[:lower:]')
+        INCLUDE_REMOVED=$(echo "$INCLUDE_REMOVED" | tr '[:upper:]' '[:lower:]')
+
+        # Renamed and modified files always count; only whole-file additions and
+        # deletions are optional, since those are the ones a reviewer might
+        # already have covered elsewhere.
+        status_filter="true"
+        [ "$INCLUDE_ADDED" = "true" ] || status_filter="$status_filter and .status != \"added\""
+        [ "$INCLUDE_REMOVED" = "true" ] || status_filter="$status_filter and .status != \"removed\""
+
         gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
-          --jq '.[] | .filename' > "$RUNNER_TEMP/all-files.txt"
+          --jq ".[] | select($status_filter) | .filename" > "$RUNNER_TEMP/all-files.txt"
 
         # Keep files that sit under one of the watched theme directories and
         # match the pattern once that directory prefix is stripped.
