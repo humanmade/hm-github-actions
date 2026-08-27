@@ -1,0 +1,148 @@
+name: Plugin Security Review
+description: >-
+  Detects third-party plugins and themes added or updated in a pull request (via
+  composer.lock) and scans only those directories with a security-only PHPCS
+  ruleset. If findings are present, requests changes on the PR so a human
+  independently reviews and owns the merge decision by dismissing the review.
+author: Human Made
+
+inputs:
+  security_standard:
+    description: Name of an installed PHPCS standard, or a path to a ruleset XML file, scanning for security issues (e.g. injection, escaping) across first- and third-party code. Defaults to HM-Minimum, which requires humanmade/coding-standards.
+    default: "HM-Minimum"
+    required: false
+  local_command:
+    description: >-
+      Optional display-only template for the "Run locally" hint in the review, letting you
+      show a project convenience wrapper instead of the raw phpcs command. `{path}` is replaced
+      with each flagged plugin directory (e.g. "composer check-security {path}"). This changes
+      only the suggested command text, not the scan the action runs, so the wrapper must invoke
+      the same standard as security_standard. Defaults to the raw "vendor/bin/phpcs --standard=… <path>".
+    default: ""
+    required: false
+  docs_url:
+    description: Optional link to project docs explaining the review process, appended to the review body.
+    default: ""
+    required: false
+
+runs:
+  using: composite
+
+  steps:
+    # Installs the (gitignored) plugin code into its Composer installer-paths (typically
+    # client-mu-plugins/ and plugins/). Requires the repo already checked out with full
+    # history and PHP/Composer already set up by the caller — see this action's README.
+    - name: Install dependencies
+      shell: bash
+      run: composer install --prefer-dist --no-progress
+
+    - name: Detect added or updated plugins
+      id: detect
+      shell: bash
+      run: |
+        bash "${{ github.action_path }}/changed-plugins.sh" "${{ github.event.pull_request.base.sha }}" changed-identities.txt > changed-plugins.txt
+        if [ -s changed-plugins.txt ]; then
+          echo "Detected plugin changes:"
+          cat changed-plugins.txt
+          # Hash of the exact package versions under review, used below to avoid re-reviewing
+          # a set of package changes this PR has already been told about.
+          echo "fingerprint=$( sha256sum changed-identities.txt | cut -d ' ' -f 1 )" >> "$GITHUB_OUTPUT"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "No third-party plugin additions or updates detected."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Scan changed plugins with the security ruleset
+      id: scan
+      if: steps.detect.outputs.found == 'true'
+      shell: bash
+      env:
+        LOCAL_COMMAND: ${{ inputs.local_command }}
+      run: |
+        # No standard was supplied, so we're relying on the HM-Minimum default. Fail loudly
+        # if it isn't actually installed, rather than letting phpcs's own "standard not found"
+        # error get misread as a plugin finding below.
+        if [ "${{ inputs.security_standard }}" = "HM-Minimum" ] && ! vendor/bin/phpcs -i | grep -qw 'HM-Minimum'; then
+          echo "::error::No security_standard was supplied, and the default standard (HM-Minimum) is not installed. Add humanmade/coding-standards as a dependency, or pass a security_standard input naming an installed PHPCS standard or a ruleset path."
+          exit 1
+        fi
+
+        clean=true
+        : > review-body.md
+        while IFS= read -r dir; do
+          [ -z "$dir" ] && continue
+          if summary=$(vendor/bin/phpcs --standard="${{ inputs.security_standard }}" --no-colors --report=summary -q "$dir" 2>&1); then
+            printf -- '- `%s` — passed cleanly\n' "$dir" >> review-body.md
+          else
+            clean=false
+            total=$(printf '%s\n' "$summary" | grep -iE 'A TOTAL OF' | head -1 | sed -E 's/^[[:space:]]*//')
+            # Display-only "Run locally" hint. If a local_command template is supplied, show it
+            # with {path} replaced by the plugin dir; otherwise fall back to the raw phpcs command.
+            if [ -n "$LOCAL_COMMAND" ]; then
+              run_cmd="${LOCAL_COMMAND//\{path\}/$dir}"
+            else
+              run_cmd="vendor/bin/phpcs --standard=${{ inputs.security_standard }} $dir"
+            fi
+            printf -- '- `%s` — %s\n  Run: `%s`\n' "$dir" "${total:-findings present}" "$run_cmd" >> review-body.md
+          fi
+        done < changed-plugins.txt
+        echo "clean=$clean" >> "$GITHUB_OUTPUT"
+
+    - name: Request manual security review
+      if: steps.scan.outputs.clean == 'false'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        FINGERPRINT: ${{ steps.detect.outputs.fingerprint }}
+      with:
+        script: |
+          const fs = require('fs');
+          const findings = fs.readFileSync('review-body.md', 'utf8').trim();
+          const { owner, repo } = context.repo;
+          const pull_number = context.payload.pull_request.number;
+
+          // Idempotency: one review per set of package changes, identified by a marker
+          // carrying the fingerprint of the changed name@version@reference identities.
+          // Keying on the packages rather than on the head commit means an unrelated
+          // push to the branch does not re-request changes a human has already
+          // dismissed, while any further package change is new code that earns a
+          // fresh review.
+          const marker = `<!-- plugin-security-review: ${process.env.FINGERPRINT} -->`;
+
+          const reviews = await github.paginate(github.rest.pulls.listReviews, {
+            owner, repo, pull_number,
+          });
+          const alreadyReviewed = reviews.some(
+            (r) => r.user?.login === 'github-actions[bot]' && r.body?.includes(marker)
+          );
+          if (alreadyReviewed) {
+            core.info('These package changes have already been reviewed on this PR; not posting another review.');
+            return;
+          }
+
+          const docsUrl = `${{ inputs.docs_url }}`;
+          const body = [
+            '## 🔐 Plugin manual security review required',
+            '',
+            'This PR adds or updates one or more third-party plugins or themes, and the security ruleset reported findings in the changed code.',
+            '',
+            'These findings are **not automatically blocking**: third-party code routinely triggers false positives. However, some findings may be real and a human must independently review this code and own the decision to merge.',
+            '',
+            '### Changed packages',
+            findings,
+            '',
+            '### What to do',
+            '1. Run the security scan locally for each package listed above (commands included).',
+            '2. Inspect flagged areas and confirm the code is fit for purpose — distinguishing real vulnerabilities from false positives.',
+            '3. **Dismiss this review** to record that you have verified it and to unblock merge.',
+            docsUrl ? `\nFull process: ${docsUrl}` : '',
+            '',
+            marker,
+          ].join('\n');
+
+          await github.rest.pulls.createReview({
+            owner, repo, pull_number,
+            event: 'REQUEST_CHANGES',
+            body,
+          });
+          core.info('Requested changes pending manual plugin security review.');
