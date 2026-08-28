@@ -1,0 +1,71 @@
+# This workflow comments on a pull request with a link to a structural diff of
+# any changed block pattern or template files, and keeps that comment in step
+# with the pull request.
+name: Block pattern diff comment
+
+on:
+  workflow_call:
+    inputs:
+      # Optional inputs.
+      theme_directories:
+        description: Theme directories to watch, one per line, relative to the repository root.
+        default: "."
+        required: false
+        type: string
+      file_pattern:
+        description: Extended regular expression matched against each changed file's path relative to a theme directory.
+        default: '^(patterns/.+\.(php|html)|templates/.+\.html|parts/.+\.html|[^/]+\.html)$'
+        required: false
+        type: string
+      include_added:
+        description: Include files added by the pull request.
+        default: "true"
+        required: false
+        type: string
+      include_removed:
+        description: Include files the pull request deletes.
+        default: "true"
+        required: false
+        type: string
+      site_url:
+        description: Base URL of the Block Pattern Diff tool.
+        default: "https://humanmade.github.io/block-pattern-diff/"
+        required: false
+        type: string
+      view:
+        description: Which view the link opens; "unified" or "sbs".
+        default: unified
+        required: false
+        type: string
+      comment_id:
+        description: Identifier embedded in the comment so it can be found and updated later.
+        default: block-pattern-diff
+        required: false
+        type: string
+      max_url_length:
+        description: Longest link to post before falling back to a comment without one.
+        default: "8000"
+        required: false
+        type: string
+
+jobs:
+  block-pattern-diff-comment:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      # No checkout: the action reads the changed files and the diff from the API.
+      - name: Comment with a pattern diff link
+        uses: humanmade/hm-github-actions/.github/actions/block-pattern-diff-comment@0e3ae861f05331175cef90ed735fa086760a75c4 # pattern-diff-action
+        with:
+          theme_directories: ${{ inputs.theme_directories }}
+          file_pattern: ${{ inputs.file_pattern }}
+          include_added: ${{ inputs.include_added }}
+          include_removed: ${{ inputs.include_removed }}
+          site_url: ${{ inputs.site_url }}
+          view: ${{ inputs.view }}
+          comment_id: ${{ inputs.comment_id }}
+          max_url_length: ${{ inputs.max_url_length }}

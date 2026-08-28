@@ -22,6 +22,12 @@ The [`sync-branches`](./.github/actions/sync-branches/action.yml) action creates
 
 [View usage instructions here](./.github/actions/sync-branches/)
 
+### Block Pattern Diff Comment
+
+The [`block-pattern-diff-comment`](./.github/actions/block-pattern-diff-comment/action.yml) action watches a pull request for changes to block patterns, templates and template parts in one or more theme directories, and comments with a link to a structural diff of those files on [Block Pattern Diff](https://humanmade.github.io/block-pattern-diff/). The diff is encoded into the link itself, so nothing is uploaded. The comment is updated in place as the pull request changes and removed if the pattern changes are reverted; a pull request that touches no watched files gets no comment.
+
+[View usage instructions here](./.github/actions/block-pattern-diff-comment/)
+
 ### Plugin Security Review
 
 The [`plugin-security-review`](./.github/actions/plugin-security-review/action.yml) action detects third-party plugins and themes added or updated in a pull request (via `composer.lock`) and scans only those directories with a security PHPCS standard (defaulting to `HM-Minimum`, or a caller-supplied ruleset for a broader scan). If findings are present, it requests changes on the PR rather than failing the check, so a human independently reviews and owns the merge decision by dismissing the review.
