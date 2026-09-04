@@ -126,3 +126,45 @@ jobs:
 ```
 
 See [.github/workflows/plugin-security-review.yml](./.github/workflows/plugin-security-review.yml) for full usage instructions.
+
+### Tag and Release Workflow
+
+This workflow tags a branch and cuts a GitHub release from that tag. It refuses to overwrite an existing tag, pushes the new tag, and creates the release with GitHub's generated release notes.
+
+A reusable workflow cannot declare its own `workflow_dispatch` inputs, so the calling repository owns the trigger and forwards the values it collects.
+
+Example usage:
+
+```yml
+name: Tag and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: true
+      target_branch:
+        description: 'Branch to tag'
+        default: main
+        required: true
+
+jobs:
+  tag-and-release:
+    name: Tag and Release
+    uses: humanmade/hm-github-actions/.github/workflows/tag-and-release.yml@4a6221b14a1ebb175076a05c1bb5ecf063ae6725
+    with:
+      version: ${{ inputs.version }}
+      target_branch: ${{ inputs.target_branch }}
+    permissions:
+      contents: write
+```
+
+`target_branch` defaults to `main`; pass `release` (or whichever branch your build workflow produces) in repositories that tag a built branch. `body`, `generate_release_notes`, `draft`, `prerelease`, `commit_user_name` and `commit_user_email` are also available.
+
+The caller job must grant `permissions: contents: write` — a called workflow can only narrow the calling workflow's token, never widen it. No `secrets: inherit` is needed: the workflow falls back to the automatic `GITHUB_TOKEN`. Pass an optional `token` secret only if the new tag needs to trigger other workflows, which a `GITHUB_TOKEN`-pushed tag does not.
+
+> [!NOTE]
+> That SHA is the tip of the `tag-and-release-workflow` branch, which is enough to call the workflow before it is merged. Re-pin it to a release tag's SHA once this lands, the way the other workflows here are pinned. A squash merge would leave the branch commits unreachable and break the reference, so do not leave it pointing at a branch tip.
+
+See [.github/workflows/tag-and-release.yml](./.github/workflows/tag-and-release.yml) for full usage instructions.
