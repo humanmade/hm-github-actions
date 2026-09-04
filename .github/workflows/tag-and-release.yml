@@ -1,0 +1,111 @@
+# This workflow tags a branch and cuts a GitHub release from that tag.
+#
+# `workflow_call` cannot declare `workflow_dispatch` inputs, so the calling
+# repository owns the trigger and passes the version and branch through. See the
+# README for a copy-pasteable caller example.
+name: Tag and Release
+
+on:
+  workflow_call:
+    inputs:
+      # Required inputs.
+      version:
+        description: Version tag to create, e.g. v1.0.0. Also used as the release name.
+        required: true
+        type: string
+      # Optional inputs.
+      target_branch:
+        description: Branch to tag. Defaults to main; set to release (or similar) in repositories that tag a built branch.
+        default: main
+        required: false
+        type: string
+      body:
+        description: Text to place at the top of the release body. Empty by default; generated release notes are appended below it.
+        default: ""
+        required: false
+        type: string
+      generate_release_notes:
+        description: Append GitHub's automatically generated release notes to the release body.
+        default: true
+        required: false
+        type: boolean
+      draft:
+        description: Create the release as a draft.
+        default: false
+        required: false
+        type: boolean
+      prerelease:
+        description: Mark the release as a prerelease.
+        default: false
+        required: false
+        type: boolean
+      commit_user_name:
+        description: Name to use as the tagger.
+        default: "github-actions[bot]"
+        required: false
+        type: string
+      commit_user_email:
+        description: Email to use as the tagger.
+        default: "github-actions[bot]@users.noreply.github.com"
+        required: false
+        type: string
+    secrets:
+      token:
+        description: Token used to push the tag and create the release. Defaults to the calling workflow's GITHUB_TOKEN. Pass a PAT if the new tag needs to trigger other workflows, which GITHUB_TOKEN-pushed tags do not.
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag-and-release:
+    name: Tag and Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.target_branch }}
+          # Full history and tags, so the tag-exists check below can see them.
+          fetch-depth: 0
+          token: ${{ secrets.token || github.token }}
+
+      - name: Abort if tag already exists
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Query the remote rather than the local clone: the check must be
+          # authoritative even if the checkout above missed a tag.
+          if git ls-remote --tags --exit-code origin "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag ${VERSION} already exists on the remote. Choose a new version, or delete the existing tag and release first."
+            exit 1
+          fi
+
+      - name: Create and push tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "${{ inputs.commit_user_name }}"
+          git config user.email "${{ inputs.commit_user_email }}"
+          git tag "${VERSION}"
+          git push origin "refs/tags/${VERSION}"
+
+      - name: Resolve tagged commit
+        id: commit
+        run: echo "sha=$( git rev-parse HEAD )" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
+        with:
+          tag: ${{ inputs.version }}
+          commit: ${{ steps.commit.outputs.sha }}
+          name: ${{ inputs.version }}
+          body: ${{ inputs.body }}
+          generateReleaseNotes: ${{ inputs.generate_release_notes }}
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          token: ${{ secrets.token || github.token }}
